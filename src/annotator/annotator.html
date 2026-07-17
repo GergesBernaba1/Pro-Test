@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Annotate — ProTest QA</title>
+    <link rel="stylesheet" href="../styles/theme.css" />
+    <link rel="stylesheet" href="annotator.css" />
+  </head>
+  <body>
+    <div class="toolbar">
+      <strong class="brand-mini">📸 ProTest Annotator</strong>
+      <span class="sep"></span>
+      <div class="tools" id="tools">
+        <button class="tool active" data-tool="rect" title="Rectangle">▭</button>
+        <button class="tool" data-tool="arrow" title="Arrow">↗</button>
+        <button class="tool" data-tool="text" title="Text">T</button>
+        <button class="tool" data-tool="blur" title="Blur / redact">░</button>
+      </div>
+      <span class="sep"></span>
+      <div class="colors" id="colors">
+        <button class="swatch active" style="--c:#f43f5e" data-color="#f43f5e"></button>
+        <button class="swatch" style="--c:#f59e0b" data-color="#f59e0b"></button>
+        <button class="swatch" style="--c:#22c55e" data-color="#22c55e"></button>
+        <button class="swatch" style="--c:#3b82f6" data-color="#3b82f6"></button>
+        <button class="swatch" style="--c:#111827" data-color="#111827"></button>
+        <button class="swatch" style="--c:#ffffff" data-color="#ffffff"></button>
+      </div>
+      <span class="sep"></span>
+      <button class="btn sm" id="undoBtn">↶ Undo</button>
+      <button class="btn sm" id="clearBtn">Clear</button>
+      <span class="spacer"></span>
+      <button class="btn sm" id="downloadBtn">⬇ Download</button>
+      <button class="btn sm primary" id="saveBtn">✓ Save to session</button>
+    </div>
+
+    <div class="stage" id="stage">
+      <canvas id="canvas"></canvas>
+      <p class="loading" id="loading">Loading screenshot…</p>
+    </div>
+
+    <input id="textInput" class="floating-text" hidden />
+
+    <script type="module" src="annotator.js"></script>
+  </body>
+</html>

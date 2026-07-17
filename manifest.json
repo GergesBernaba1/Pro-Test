@@ -1,0 +1,83 @@
+{
+  "manifest_version": 3,
+  "name": "ProTest QA — Web Testing & QA Companion",
+  "version": "0.1.0",
+  "description": "A QA tester's companion: run edge-case checks, inject test data, overlay UX references, capture annotated evidence, and generate beautiful test reports.",
+  "minimum_chrome_version": "114",
+
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+
+  "action": {
+    "default_title": "ProTest QA — open testing panel",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "32": "assets/icons/icon32.png",
+      "48": "assets/icons/icon48.png"
+    }
+  },
+
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage",
+    "unlimitedStorage",
+    "activeTab",
+    "scripting"
+  ],
+
+  "host_permissions": ["<all_urls>"],
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/monitor.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.js"],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/icons/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "commands": {
+    "open-tester": {
+      "suggested_key": { "default": "Ctrl+Shift+Y" },
+      "description": "Open the ProTest QA side panel"
+    },
+    "capture-screenshot": {
+      "suggested_key": { "default": "Ctrl+Shift+U" },
+      "description": "Capture a screenshot of the current tab"
+    },
+    "toggle-inspector": {
+      "suggested_key": { "default": "Ctrl+Shift+K" },
+      "description": "Toggle the in-page element inspector"
+    }
+  }
+}

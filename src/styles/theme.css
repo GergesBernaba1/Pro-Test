@@ -1,0 +1,149 @@
+/* ProTest QA design tokens + shared primitives.
+   Theme is driven by [data-theme="light|dark"] on <html>. The default token
+   block is dark; the light overrides follow. A "system" setting resolves to
+   one of these at runtime in the JS. */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #0f1420;
+  --bg-elev: #171d2b;
+  --bg-elev-2: #1f2738;
+  --card: #161c29;
+  --line: #29324a;
+  --line-strong: #3a465f;
+  --ink: #e6eaf2;
+  --ink-soft: #aab3c5;
+  --ink-mute: #7b869c;
+  --brand: #6366f1;
+  --brand-ink: #ffffff;
+  --brand-soft: #262a55;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6fb;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef1f7;
+  --card: #ffffff;
+  --line: #e2e6ee;
+  --line-strong: #cbd2e0;
+  --ink: #1a1f2b;
+  --ink-soft: #4a5468;
+  --ink-mute: #8a93a6;
+  --brand: #4f46e5;
+  --brand-ink: #ffffff;
+  --brand-soft: #eceafe;
+  --ok: #0f9d58;
+  --warn: #e37400;
+  --danger: #d93025;
+  --info: #1a73e8;
+  --shadow: 0 6px 24px rgba(20, 30, 60, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- primitives --------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev-2);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s ease, background 0.12s ease;
+  user-select: none;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.btn.sm { padding: 4px 8px; font-size: 12px; border-radius: 6px; }
+.btn.block { width: 100%; }
+
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.input,
+textarea.input,
+select.input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+textarea.input { resize: vertical; min-height: 60px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.badge.pass { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.badge.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.badge.blocked { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.badge.untested { color: var(--ink-mute); background: color-mix(in srgb, var(--ink-mute) 16%, transparent); }
+
+.muted { color: var(--ink-mute); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row.wrap { flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }

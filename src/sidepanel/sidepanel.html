@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProTest QA</title>
+    <link rel="stylesheet" href="../styles/theme.css" />
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <!-- ===== Header ===== -->
+    <header class="app-header">
+      <div class="brand">
+        <img src="../../assets/icons/icon32.png" alt="" width="22" height="22" />
+        <div>
+          <strong>ProTest QA</strong>
+          <span class="app-sub" id="sessionName">No active session</span>
+        </div>
+      </div>
+      <button class="icon-btn" id="settingsToggle" title="Settings (Jira)">⚙</button>
+      <button class="icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
+    </header>
+
+    <!-- ===== Settings drawer (Jira integration) ===== -->
+    <div class="drawer" id="settingsDrawer" hidden>
+      <div class="drawer-head">
+        <strong>⚙ Settings</strong>
+        <button class="icon-btn" id="closeSettings">✕</button>
+      </div>
+      <div class="drawer-body">
+        <p class="muted tiny">Jira Cloud credentials for one-click bug filing. Stored locally only — used only when you click "File in Jira" on a bug.</p>
+        <div class="field">
+          <label for="jiraBaseUrl">Jira base URL</label>
+          <input class="input" id="jiraBaseUrl" placeholder="https://yourcompany.atlassian.net" />
+        </div>
+        <div class="field">
+          <label for="jiraProjectKey">Project key</label>
+          <input class="input" id="jiraProjectKey" placeholder="PROJ" />
+        </div>
+        <div class="field">
+          <label for="jiraEmail">Account email</label>
+          <input class="input" id="jiraEmail" type="email" placeholder="you@company.com" />
+        </div>
+        <div class="field">
+          <label for="jiraApiToken">API token</label>
+          <input class="input" id="jiraApiToken" type="password" placeholder="Create at id.atlassian.com/manage-profile/security/api-tokens" />
+        </div>
+        <div class="row wrap">
+          <button class="btn primary sm" id="saveJiraSettings">Save</button>
+          <button class="btn sm" id="testJiraConnection">Test connection</button>
+        </div>
+        <p class="muted tiny" id="jiraStatus"></p>
+
+        <hr style="border: none; border-top: 1px solid var(--line); margin: 18px 0" />
+
+        <p class="muted tiny">Azure DevOps / TFS credentials for one-click bug filing (Personal Access Token). Stored locally only — used only when you click "File in TFS" on a bug.</p>
+        <div class="field">
+          <label for="tfsOrgUrl">Organization / collection URL</label>
+          <input class="input" id="tfsOrgUrl" placeholder="https://dev.azure.com/yourorg or https://tfs.company.com/tfs/DefaultCollection" />
+        </div>
+        <div class="field">
+          <label for="tfsProject">Project name</label>
+          <input class="input" id="tfsProject" placeholder="MyProject" />
+        </div>
+        <div class="field">
+          <label for="tfsPat">Personal access token</label>
+          <input class="input" id="tfsPat" type="password" placeholder="Create under User Settings → Personal Access Tokens" />
+        </div>
+        <div class="field">
+          <label for="tfsApiVersion">API version</label>
+          <input class="input" id="tfsApiVersion" placeholder="6.0" />
+        </div>
+        <div class="row wrap">
+          <button class="btn primary sm" id="saveTfsSettings">Save</button>
+          <button class="btn sm" id="testTfsConnection">Test connection</button>
+        </div>
+        <p class="muted tiny" id="tfsStatus"></p>
+      </div>
+    </div>
+
+    <!-- ===== Tabs ===== -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="session">Session</button>
+      <button class="tab" data-tab="tools">Tools</button>
+      <button class="tab" data-tab="steps">Steps</button>
+      <button class="tab" data-tab="edge">Edge</button>
+      <button class="tab" data-tab="bugs">Bugs</button>
+      <button class="tab" data-tab="report">Report</button>
+    </nav>
+
+    <main class="content">
+      <!-- ===== SESSION ===== -->
+      <section class="panel active" data-panel="session">
+        <div class="row wrap" style="margin-bottom: 12px">
+          <button class="btn primary sm" id="newSessionBtn">＋ New session</button>
+          <select class="input sm" id="sessionSelect" style="flex: 1"></select>
+          <button class="btn danger sm" id="deleteSessionBtn" title="Delete session">🗑</button>
+        </div>
+        <div class="row wrap" style="margin-bottom: 12px">
+          <button class="btn sm" id="exportSessionBtn">⬇ Export session</button>
+          <button class="btn sm" id="importSessionBtn">⬆ Import session</button>
+          <input type="file" id="importSessionFile" accept="application/json" hidden />
+        </div>
+
+        <div class="field">
+          <label for="fName">Session name</label>
+          <input class="input" id="fName" placeholder="e.g. PROJ-123 Login validation" />
+        </div>
+        <div class="field">
+          <label for="fStory">User story (link or text)</label>
+          <textarea class="input" id="fStory" style="min-height: 60px" placeholder="Paste a Jira/Confluence link, or the user story text itself (e.g. &quot;As a user, I want…&quot;)"></textarea>
+        </div>
+        <div class="field">
+          <label for="fTarget">Target page URL</label>
+          <div class="row">
+            <input class="input" id="fTarget" type="url" placeholder="https://app.example.com/login" style="flex: 1" />
+            <button class="btn sm" id="useCurrentUrl" title="Use current tab URL">Current</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fTester">Tester name</label>
+          <input class="input" id="fTester" placeholder="Your name" />
+        </div>
+        <div class="field">
+          <label for="fNotes">Notes</label>
+          <textarea class="input" id="fNotes" placeholder="Context, preconditions, test scope…"></textarea>
+        </div>
+
+        <div class="field">
+          <label>UX reference screenshot</label>
+          <div class="dropzone" id="uxDrop">
+            <input type="file" id="uxFile" accept="image/*" hidden />
+            <div id="uxEmpty" class="dz-empty">
+              <span>🖼️</span>
+              <p>Drop an image, paste, or <button class="linkbtn" id="uxBrowse">browse</button></p>
+            </div>
+            <div id="uxPreview" class="dz-preview" hidden>
+              <img id="uxImg" alt="UX reference" />
+              <button class="btn sm danger" id="uxClear">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="muted tiny" id="storageInfo"></p>
+      </section>
+
+      <!-- ===== TOOLS ===== -->
+      <section class="panel" data-panel="tools">
+        <div class="card tool-card">
+          <div class="tool-title">🔎 Element inspector</div>
+          <p class="muted tiny">Hover to highlight, click to grab a CSS selector.</p>
+          <div class="row wrap">
+            <button class="btn sm" id="toggleInspector">Toggle inspector</button>
+            <button class="btn sm" id="pickElement">Pick one element</button>
+          </div>
+          <div id="pickedList" class="picked-list"></div>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🧲 Test-data injector</div>
+          <p class="muted tiny">Fill inputs with edge-case data. Choose scope, then a value.</p>
+          <div class="row" style="margin-bottom: 8px">
+            <select class="input sm" id="injectScope" style="width: auto">
+              <option value="focused">Focused field</option>
+              <option value="all">All fields</option>
+            </select>
+            <button class="btn sm" id="fillIdentity">Fill fake identity</button>
+          </div>
+          <input class="input sm" id="dataSearch" placeholder="Search test values…" style="margin-bottom: 8px" />
+          <div id="dataList" class="data-list"></div>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🖼️ UX overlay</div>
+          <p class="muted tiny">Overlay the reference screenshot on the live page to spot diffs.</p>
+          <button class="btn sm" id="toggleOverlay">Toggle overlay on page</button>
+          <p class="muted tiny" id="overlayHint"></p>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">📸 Capture</div>
+          <p class="muted tiny">Grab the tab and annotate it in the editor.</p>
+          <div class="row wrap">
+            <button class="btn sm primary" id="captureBtn">Capture visible</button>
+            <button class="btn sm" id="captureFullPageBtn">Capture full page</button>
+          </div>
+          <p class="muted tiny" id="fullPageStatus"></p>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">📱 Viewport presets</div>
+          <p class="muted tiny">Resize the browser window to approximate common breakpoints. (Resizes the whole window, not a pixel-perfect device emulation.)</p>
+          <div class="row wrap">
+            <button class="btn sm" data-viewport="375x812">Mobile</button>
+            <button class="btn sm" data-viewport="768x1024">Tablet</button>
+            <button class="btn sm" data-viewport="1440x900">Desktop</button>
+            <button class="btn ghost sm" data-viewport="1280x800">Reset</button>
+          </div>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🧪 Accessibility quick-check</div>
+          <p class="muted tiny">Heuristic scan for common issues — missing alt text, unlabeled fields, low contrast, etc. Not a full WCAG audit.</p>
+          <div class="row wrap">
+            <button class="btn sm primary" id="runA11yBtn">Run scan</button>
+            <button class="btn ghost sm" id="copyA11yBtn">Copy results</button>
+          </div>
+          <div id="a11yResults" class="a11y-results"></div>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🔌 API tester (Swagger / OpenAPI)</div>
+          <p class="muted tiny">Load a spec, pick an endpoint, and send a real request — handy for testing the API behind the feature you're QAing. JSON specs only (not YAML).</p>
+
+          <div class="row wrap" style="margin-bottom: 8px">
+            <input class="input sm" id="apiSpecUrl" placeholder="https://api.example.com/swagger.json" style="flex: 1" />
+            <button class="btn sm" id="loadApiSpecUrl">Load URL</button>
+          </div>
+          <details style="margin-bottom: 8px">
+            <summary class="muted tiny" style="cursor: pointer">Or paste spec JSON</summary>
+            <textarea class="input sm" id="apiSpecJson" placeholder="Paste OpenAPI/Swagger JSON here…" style="margin-top: 6px; height: 70px"></textarea>
+            <button class="btn sm" id="loadApiSpecJson" style="margin-top: 6px">Parse pasted JSON</button>
+          </details>
+          <p class="muted tiny" id="apiSpecStatus"></p>
+
+          <div id="apiTesterBody" hidden>
+            <div class="field">
+              <label for="apiBaseUrl">Base URL</label>
+              <input class="input sm" id="apiBaseUrl" />
+            </div>
+            <div class="field">
+              <label for="apiEndpointSelect">Endpoint</label>
+              <select class="input sm" id="apiEndpointSelect"></select>
+            </div>
+            <div id="apiParamsList" class="stack"></div>
+            <div class="field">
+              <label for="apiExtraHeaders">Extra headers (one per line, "Name: value")</label>
+              <textarea class="input sm" id="apiExtraHeaders" placeholder="Authorization: Bearer …"></textarea>
+            </div>
+            <div class="field" id="apiBodyField" hidden>
+              <label for="apiBodyJson">Request body (JSON)</label>
+              <textarea class="input sm" id="apiBodyJson" style="height: 90px"></textarea>
+            </div>
+            <div class="row wrap">
+              <button class="btn sm primary" id="sendApiRequest">Send request</button>
+              <button class="btn ghost sm" id="copyCurl">Copy as curl</button>
+            </div>
+            <div id="apiResponse" class="api-response"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== STEPS ===== -->
+      <section class="panel" data-panel="steps">
+        <div class="row" style="margin-bottom: 10px">
+          <input class="input sm" id="stepTitle" placeholder="Describe a test step…" style="flex: 1" />
+          <button class="btn primary sm" id="addStep">Add</button>
+        </div>
+
+        <div class="card tool-card" style="margin-bottom: 12px">
+          <div class="tool-title">📋 Step templates</div>
+          <div class="row wrap" style="margin-bottom: 6px">
+            <select class="input sm" id="templateSelect" style="flex: 1"></select>
+            <button class="btn sm" id="insertTemplateBtn">Insert</button>
+            <button class="btn danger sm" id="deleteTemplateBtn" title="Delete template">🗑</button>
+          </div>
+          <div class="row wrap">
+            <input class="input sm" id="templateName" placeholder="Template name (e.g. Login flow)" style="flex: 1" />
+            <button class="btn sm" id="saveTemplateBtn">Save current steps as template</button>
+          </div>
+        </div>
+
+        <div id="stepsList" class="stack"></div>
+      </section>
+
+      <!-- ===== EDGE CASES ===== -->
+      <section class="panel" data-panel="edge">
+        <div class="row wrap" style="margin-bottom: 10px">
+          <button class="btn sm" id="loadEdgeTemplate">Load checklist template</button>
+          <button class="btn ghost sm" id="clearEdge">Clear</button>
+        </div>
+        <div id="edgeList" class="stack"></div>
+      </section>
+
+      <!-- ===== BUGS ===== -->
+      <section class="panel" data-panel="bugs">
+        <div class="field">
+          <input class="input sm" id="bugTitle" placeholder="Bug title" style="margin-bottom: 6px" />
+          <div class="row" style="margin-bottom: 6px">
+            <select class="input sm" id="bugSeverity" style="width: auto">
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <button class="btn sm" id="bugCapture" title="Attach a screenshot">📸 Attach</button>
+            <button class="btn primary sm" id="addBug">Add bug</button>
+          </div>
+          <textarea class="input sm" id="bugDesc" placeholder="Steps to reproduce, expected vs actual…"></textarea>
+          <img id="bugShotPreview" class="bug-shot-preview" hidden alt="attached" />
+        </div>
+        <div id="bugsList" class="stack"></div>
+      </section>
+
+      <!-- ===== REPORT ===== -->
+      <section class="panel" data-panel="report">
+        <div class="card tool-card">
+          <div class="tool-title">📊 Generate report</div>
+          <div class="row wrap">
+            <button class="btn sm primary" id="openReport">Open HTML report</button>
+            <button class="btn sm" id="downloadReport">Download .html</button>
+          </div>
+          <div class="row wrap" style="margin-top: 8px">
+            <button class="btn sm" id="printPdf">Print / Save PDF</button>
+            <button class="btn sm" id="copyMd">Copy Markdown (Jira)</button>
+          </div>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🤖 AI edge-case ideas</div>
+          <p class="muted tiny">Copy a ready-made prompt for your favourite AI assistant.</p>
+          <button class="btn sm" id="copyAiPrompt">Copy AI prompt</button>
+          <textarea class="input tiny" id="aiPromptPreview" readonly style="margin-top: 8px; height: 90px"></textarea>
+        </div>
+
+        <div class="card tool-card">
+          <div class="tool-title">🩺 Console / network log</div>
+          <p class="muted tiny">Errors are saved into the session &amp; report. Switch to "All" for a live view of every request (not persisted).</p>
+          <div class="row wrap" style="margin-bottom: 6px">
+            <button class="btn sm active" id="logFilterErrors" data-filter="errors">Errors only</button>
+            <button class="btn ghost sm" id="logFilterAll" data-filter="all">All requests</button>
+            <span class="spacer"></span>
+            <button class="btn ghost sm" id="clearLogs">Clear</button>
+          </div>
+          <p class="muted tiny" id="logCount"></p>
+          <div id="logsList" class="logs"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

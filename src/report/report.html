@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QA Report — ProTest</title>
+    <style>
+      body { margin: 0; font: 15px sans-serif; }
+      .loading { padding: 40px; color: #888; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <!-- The report markup and styles are injected by report.js. Using an
+         external module script keeps us within the extension-pages CSP, which
+         a blob: tab with an inline script would violate. -->
+    <p class="loading" id="loading">Building report…</p>
+    <script type="module" src="report.js"></script>
+  </body>
+</html>
