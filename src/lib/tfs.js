@@ -27,12 +27,44 @@ export function isTfsConfigured(settings) {
   return !!(settings.tfsOrgUrl && settings.tfsProject && settings.tfsPat);
 }
 
+// Builds an actionable message for a failed auth attempt. A 401 here almost
+// always means one of two on-premises-specific things (Azure DevOps Services
+// PATs "just work"; on-prem TFS is where this bites):
+//  1. The org/collection URL is missing the collection segment, e.g.
+//     https://tfs.company.com needs to be https://tfs.company.com/tfs/DefaultCollection
+//  2. The IIS site only accepts Windows auth (NTLM/Negotiate) and Basic auth
+//     (which is what PATs use) has not been enabled server-side — a server
+//     admin setting this extension cannot work around.
+async function describeAuthFailure(res, settings) {
+  if (res.status !== 401) return `Connection failed (HTTP ${res.status}). Check the org/collection URL, project name, and PAT.`;
+
+  const challenge = res.headers.get("www-authenticate") || "";
+  const looksLikeMissingCollection = !/\/(tfs|DefaultCollection)\b/i.test(settings.tfsOrgUrl) && !/dev\.azure\.com/i.test(settings.tfsOrgUrl);
+
+  const hints = [];
+  if (/ntlm|negotiate/i.test(challenge)) {
+    hints.push(
+      "This server responded asking for Windows authentication (NTLM/Negotiate), not a token. " +
+        "On-premises TFS needs Basic authentication explicitly enabled on the server (IIS) for PATs to work here — check with your TFS admin, or use Jira instead if that's not possible."
+    );
+  }
+  if (looksLikeMissingCollection) {
+    hints.push(
+      `The URL "${settings.tfsOrgUrl}" doesn't look like it includes a collection. On-premises TFS usually needs one, e.g. https://tfs.company.com/tfs/DefaultCollection — try adding it.`
+    );
+  }
+  if (!hints.length) {
+    hints.push("Double-check the PAT is valid, hasn't expired, and has the \"Work Items (Read & Write)\" scope.");
+  }
+  return `Connection failed (HTTP 401 Unauthorized). ${hints.join(" ")}`;
+}
+
 export async function testTfsConnection(settings) {
   const url = `${baseOf(settings)}/_apis/projects/${projectSegment(settings)}?api-version=${apiVersion(settings)}`;
   const res = await fetch(url, {
     headers: { Authorization: authHeader(settings), Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`Connection failed (HTTP ${res.status}). Check the org/collection URL, project name, and PAT.`);
+  if (!res.ok) throw new Error(await describeAuthFailure(res, settings));
   const data = await res.json();
   return data.name || "Connected";
 }
@@ -64,7 +96,7 @@ export async function createTfsBug(settings, bug) {
     body: JSON.stringify(ops),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(res.status === 401 ? await describeAuthFailure(res, settings) : data?.message || `HTTP ${res.status}`);
   return {
     id: data.id,
     url: data._links?.html?.href || `${baseOf(settings)}/${projectSegment(settings)}/_workitems/edit/${data.id}`,

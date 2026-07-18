@@ -21,60 +21,67 @@
       <button class="icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
     </header>
 
-    <!-- ===== Settings drawer (Jira integration) ===== -->
+    <!-- ===== Settings drawer (bug-tracker integrations) ===== -->
     <div class="drawer" id="settingsDrawer" hidden>
       <div class="drawer-head">
         <strong>⚙ Settings</strong>
         <button class="icon-btn" id="closeSettings">✕</button>
       </div>
       <div class="drawer-body">
-        <p class="muted tiny">Jira Cloud credentials for one-click bug filing. Stored locally only — used only when you click "File in Jira" on a bug.</p>
-        <div class="field">
-          <label for="jiraBaseUrl">Jira base URL</label>
-          <input class="input" id="jiraBaseUrl" placeholder="https://yourcompany.atlassian.net" />
+        <div class="tracker-toggle" role="tablist">
+          <button class="tracker-toggle-btn active" id="trackerTabJira" data-tracker="jira" role="tab">Jira</button>
+          <button class="tracker-toggle-btn" id="trackerTabTfs" data-tracker="tfs" role="tab">Azure DevOps / TFS</button>
         </div>
-        <div class="field">
-          <label for="jiraProjectKey">Project key</label>
-          <input class="input" id="jiraProjectKey" placeholder="PROJ" />
-        </div>
-        <div class="field">
-          <label for="jiraEmail">Account email</label>
-          <input class="input" id="jiraEmail" type="email" placeholder="you@company.com" />
-        </div>
-        <div class="field">
-          <label for="jiraApiToken">API token</label>
-          <input class="input" id="jiraApiToken" type="password" placeholder="Create at id.atlassian.com/manage-profile/security/api-tokens" />
-        </div>
-        <div class="row wrap">
-          <button class="btn primary sm" id="saveJiraSettings">Save</button>
-          <button class="btn sm" id="testJiraConnection">Test connection</button>
-        </div>
-        <p class="muted tiny" id="jiraStatus"></p>
 
-        <hr style="border: none; border-top: 1px solid var(--line); margin: 18px 0" />
+        <div id="jiraSettingsPanel">
+          <p class="muted tiny">Jira Cloud credentials for one-click bug filing. Stored locally only — used only when you click "File in Jira" on a bug.</p>
+          <div class="field">
+            <label for="jiraBaseUrl">Jira base URL</label>
+            <input class="input" id="jiraBaseUrl" placeholder="https://yourcompany.atlassian.net" />
+          </div>
+          <div class="field">
+            <label for="jiraProjectKey">Project key</label>
+            <input class="input" id="jiraProjectKey" placeholder="PROJ" />
+          </div>
+          <div class="field">
+            <label for="jiraEmail">Account email</label>
+            <input class="input" id="jiraEmail" type="email" placeholder="you@company.com" />
+          </div>
+          <div class="field">
+            <label for="jiraApiToken">API token</label>
+            <input class="input" id="jiraApiToken" type="password" placeholder="Create at id.atlassian.com/manage-profile/security/api-tokens" />
+          </div>
+          <div class="row wrap">
+            <button class="btn primary sm" id="saveJiraSettings">Save</button>
+            <button class="btn sm" id="testJiraConnection">Test connection</button>
+          </div>
+          <p class="muted tiny" id="jiraStatus"></p>
+        </div>
 
-        <p class="muted tiny">Azure DevOps / TFS credentials for one-click bug filing (Personal Access Token). Stored locally only — used only when you click "File in TFS" on a bug.</p>
-        <div class="field">
-          <label for="tfsOrgUrl">Organization / collection URL</label>
-          <input class="input" id="tfsOrgUrl" placeholder="https://dev.azure.com/yourorg or https://tfs.company.com/tfs/DefaultCollection" />
+        <div id="tfsSettingsPanel" hidden>
+          <p class="muted tiny">Azure DevOps / TFS credentials for one-click bug filing (Personal Access Token). Stored locally only — used only when you click "File in TFS" on a bug.</p>
+          <div class="field">
+            <label for="tfsOrgUrl">Organization / collection URL</label>
+            <input class="input" id="tfsOrgUrl" placeholder="https://dev.azure.com/yourorg or https://tfs.company.com/tfs/DefaultCollection" />
+          </div>
+          <div class="field">
+            <label for="tfsProject">Project name</label>
+            <input class="input" id="tfsProject" placeholder="MyProject" />
+          </div>
+          <div class="field">
+            <label for="tfsPat">Personal access token</label>
+            <input class="input" id="tfsPat" type="password" placeholder="Create under User Settings → Personal Access Tokens" />
+          </div>
+          <div class="field">
+            <label for="tfsApiVersion">API version</label>
+            <input class="input" id="tfsApiVersion" placeholder="6.0" />
+          </div>
+          <div class="row wrap">
+            <button class="btn primary sm" id="saveTfsSettings">Save</button>
+            <button class="btn sm" id="testTfsConnection">Test connection</button>
+          </div>
+          <p class="muted tiny" id="tfsStatus"></p>
         </div>
-        <div class="field">
-          <label for="tfsProject">Project name</label>
-          <input class="input" id="tfsProject" placeholder="MyProject" />
-        </div>
-        <div class="field">
-          <label for="tfsPat">Personal access token</label>
-          <input class="input" id="tfsPat" type="password" placeholder="Create under User Settings → Personal Access Tokens" />
-        </div>
-        <div class="field">
-          <label for="tfsApiVersion">API version</label>
-          <input class="input" id="tfsApiVersion" placeholder="6.0" />
-        </div>
-        <div class="row wrap">
-          <button class="btn primary sm" id="saveTfsSettings">Save</button>
-          <button class="btn sm" id="testTfsConnection">Test connection</button>
-        </div>
-        <p class="muted tiny" id="tfsStatus"></p>
       </div>
     </div>
 

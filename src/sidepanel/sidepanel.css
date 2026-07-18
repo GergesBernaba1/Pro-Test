@@ -68,6 +68,30 @@ body {
 }
 .btn.active { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 
+/* ---- settings drawer: Jira/TFS toggle ------------------------------------- */
+.tracker-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 16px;
+}
+.tracker-toggle-btn {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--ink-mute);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tracker-toggle-btn:hover { color: var(--ink); }
+.tracker-toggle-btn.active { background: var(--brand); color: var(--brand-ink); }
+
 .tabs {
   display: flex;
   gap: 2px;

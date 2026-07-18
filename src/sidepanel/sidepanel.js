@@ -90,6 +90,9 @@ function wireHeader() {
 function wireSettings() {
   const drawer = $("#settingsDrawer");
 
+  $("#trackerTabJira").addEventListener("click", () => setTrackerTab("jira"));
+  $("#trackerTabTfs").addEventListener("click", () => setTrackerTab("tfs"));
+
   $("#settingsToggle").addEventListener("click", async () => {
     const s = await store.getSettings();
     $("#jiraBaseUrl").value = s.jiraBaseUrl || "";
@@ -102,6 +105,9 @@ function wireSettings() {
     $("#tfsPat").value = s.tfsPat || "";
     $("#tfsApiVersion").value = s.tfsApiVersion || "6.0";
     $("#tfsStatus").textContent = "";
+    // Open on whichever tracker already has credentials, so returning users
+    // land where they left off rather than always on Jira.
+    setTrackerTab(isTfsConfigured(s) && !isJiraConfigured(s) ? "tfs" : "jira");
     drawer.hidden = false;
   });
   $("#closeSettings").addEventListener("click", () => (drawer.hidden = true));
@@ -165,6 +171,13 @@ function currentTfsFields() {
     tfsPat: $("#tfsPat").value.trim(),
     tfsApiVersion: $("#tfsApiVersion").value.trim() || "6.0",
   };
+}
+
+function setTrackerTab(tracker) {
+  $("#trackerTabJira").classList.toggle("active", tracker === "jira");
+  $("#trackerTabTfs").classList.toggle("active", tracker === "tfs");
+  $("#jiraSettingsPanel").hidden = tracker !== "jira";
+  $("#tfsSettingsPanel").hidden = tracker !== "tfs";
 }
 
 // ============================================================================
@@ -1015,16 +1028,36 @@ function addBug() {
   toast("Bug added");
 }
 
-function renderBugs() {
+async function renderBugs() {
   const list = $("#bugsList");
   list.innerHTML = "";
   if (!session.findings.length) {
     list.innerHTML = `<p class="muted tiny">No bugs recorded yet.</p>`;
     return;
   }
+
+  // Only offer "File in X" for a tracker that's actually configured — an
+  // already-filed bug still shows its link either way.
+  const settings = await store.getSettings();
+  const jiraReady = isJiraConfigured(settings);
+  const tfsReady = isTfsConfigured(settings);
+
   session.findings.forEach((bug) => {
     const el = document.createElement("div");
     el.className = "item";
+
+    const trackerLinks = [];
+    if (bug.jiraUrl) {
+      trackerLinks.push(`<a class="jira-link" href="${escapeHtml(bug.jiraUrl)}" target="_blank" rel="noopener">Jira: ${escapeHtml(bug.jiraKey)}</a>`);
+    } else if (jiraReady) {
+      trackerLinks.push(`<button class="btn sm" data-act="file-jira">File in Jira</button>`);
+    }
+    if (bug.tfsUrl) {
+      trackerLinks.push(`<a class="jira-link" href="${escapeHtml(bug.tfsUrl)}" target="_blank" rel="noopener">TFS: #${escapeHtml(bug.tfsId)}</a>`);
+    } else if (tfsReady) {
+      trackerLinks.push(`<button class="btn sm" data-act="file-tfs">File in TFS</button>`);
+    }
+
     el.innerHTML = `
       <div class="item-head">
         <span class="badge ${bug.severity === "critical" || bug.severity === "high" ? "fail" : "blocked"}">${bug.severity}</span>
@@ -1033,18 +1066,7 @@ function renderBugs() {
       </div>
       ${bug.description ? `<div class="item-body"><p class="muted tiny" style="white-space:pre-wrap">${escapeHtml(bug.description)}</p></div>` : ""}
       ${bug.screenshot ? `<img class="thumb" src="${bug.screenshot}" alt="bug screenshot"/>` : ""}
-      <div class="jira-row">
-        ${
-          bug.jiraUrl
-            ? `<a class="jira-link" href="${escapeHtml(bug.jiraUrl)}" target="_blank" rel="noopener">Jira: ${escapeHtml(bug.jiraKey)}</a>`
-            : `<button class="btn sm" data-act="file-jira">File in Jira</button>`
-        }
-        ${
-          bug.tfsUrl
-            ? `<a class="jira-link" href="${escapeHtml(bug.tfsUrl)}" target="_blank" rel="noopener">TFS: #${escapeHtml(bug.tfsId)}</a>`
-            : `<button class="btn sm" data-act="file-tfs">File in TFS</button>`
-        }
-      </div>`;
+      ${trackerLinks.length ? `<div class="jira-row">${trackerLinks.join("")}</div>` : ""}`;
     el.querySelector('[data-act="del"]').addEventListener("click", () => {
       session.findings = session.findings.filter((b) => b.id !== bug.id);
       renderBugs();
