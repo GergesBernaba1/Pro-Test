@@ -52,7 +52,8 @@ export function uid(prefix = "id") {
 // ---- sessions --------------------------------------------------------------
 
 export async function getSessions() {
-  return get(KEYS.SESSIONS, []);
+  const sessions = await get(KEYS.SESSIONS, []);
+  return sessions.map(migrateSession);
 }
 
 export async function getActiveSessionId() {
@@ -75,12 +76,22 @@ export function newSessionObject(fields = {}) {
     targetUrl: fields.targetUrl || "",
     testerName: fields.testerName || "",
     notes: fields.notes || "",
-    screenshot: fields.screenshot || null, // UX reference image (dataURL)
+    screenshots: fields.screenshots || [], // UX reference screens: [{ id, name, dataUrl }]
     steps: [],
     edgeCases: [],
     findings: [],
     logs: [],
   };
+}
+
+// Older sessions stored a single `screenshot` (string|null) instead of a
+// `screenshots` array. Normalize on read so the rest of the app only ever
+// deals with the array form.
+function migrateSession(session) {
+  if (session && !Array.isArray(session.screenshots)) {
+    session.screenshots = session.screenshot ? [{ id: uid("ux"), name: "UX reference", dataUrl: session.screenshot }] : [];
+  }
+  return session;
 }
 
 export async function saveSession(session) {

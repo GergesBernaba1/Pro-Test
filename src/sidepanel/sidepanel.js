@@ -295,13 +295,18 @@ function wireExportImport() {
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
+      const screenshots = Array.isArray(data.screenshots)
+        ? data.screenshots
+        : data.screenshot // older export format — a single dataURL
+        ? [{ id: store.uid("ux"), name: "UX reference", dataUrl: data.screenshot }]
+        : [];
       const imported = store.newSessionObject({
         name: `${data.name || "Imported session"} (imported)`,
         userStoryUrl: data.userStoryUrl,
         targetUrl: data.targetUrl,
         testerName: data.testerName,
         notes: data.notes,
-        screenshot: data.screenshot,
+        screenshots,
       });
       imported.steps = Array.isArray(data.steps) ? data.steps : [];
       imported.edgeCases = Array.isArray(data.edgeCases) ? data.edgeCases : [];
@@ -317,12 +322,15 @@ function wireExportImport() {
   });
 }
 
-// ---- UX reference dropzone -------------------------------------------------
+// ---- UX reference gallery (multiple screens per session) -------------------
 function wireUxDropzone() {
   const dz = $("#uxDrop");
   const file = $("#uxFile");
   $("#uxBrowse").addEventListener("click", () => file.click());
-  file.addEventListener("change", () => file.files[0] && loadUxImage(file.files[0]));
+  file.addEventListener("change", () => {
+    [...file.files].forEach((f) => addUxImage(f));
+    file.value = ""; // allow re-selecting the same file(s) later
+  });
 
   ["dragenter", "dragover"].forEach((ev) =>
     dz.addEventListener(ev, (e) => {
@@ -337,40 +345,83 @@ function wireUxDropzone() {
     })
   );
   dz.addEventListener("drop", (e) => {
-    const f = e.dataTransfer.files[0];
-    if (f) loadUxImage(f);
+    [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/")).forEach((f) => addUxImage(f));
   });
-  // Paste an image anywhere in the panel.
+  // Paste one or more images anywhere in the panel.
   document.addEventListener("paste", (e) => {
-    const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
-    if (item) loadUxImage(item.getAsFile());
-  });
-
-  $("#uxClear").addEventListener("click", () => {
-    session.screenshot = null;
-    renderUxPreview();
-    persistSoon();
+    [...(e.clipboardData?.items || [])].filter((i) => i.type.startsWith("image/")).forEach((i) => addUxImage(i.getAsFile()));
   });
 }
 
-async function loadUxImage(file) {
+async function addUxImage(file) {
   try {
     const dataUrl = await resizeImage(file, 1600, 0.85);
-    session.screenshot = dataUrl;
+    session.screenshots = session.screenshots || [];
+    session.screenshots.push({
+      id: store.uid("ux"),
+      name: (file.name || "UX reference").replace(/\.[a-z0-9]+$/i, ""),
+      dataUrl,
+    });
     renderUxPreview();
     persistSoon();
     renderStorageInfo();
-    toast("UX reference saved");
+    toast("UX reference added");
   } catch (e) {
     toast("Could not read image");
   }
 }
 
 function renderUxPreview() {
-  const has = !!session.screenshot;
-  $("#uxEmpty").hidden = has;
-  $("#uxPreview").hidden = !has;
-  if (has) $("#uxImg").src = session.screenshot;
+  const gallery = $("#uxGallery");
+  gallery.innerHTML = "";
+  const shots = session.screenshots || [];
+  if (!shots.length) {
+    gallery.innerHTML = `<p class="muted tiny">No UX reference screens yet.</p>`;
+  } else {
+    shots.forEach((shot) => {
+      const item = document.createElement("div");
+      item.className = "ux-gallery-item";
+      item.innerHTML = `
+        <img src="${shot.dataUrl}" alt="${escapeHtml(shot.name)}"/>
+        <input class="ux-name" value="${escapeHtml(shot.name)}" title="Rename this screen" />
+        <button class="ux-remove" title="Remove">✕</button>`;
+      item.querySelector(".ux-name").addEventListener("input", (e) => {
+        shot.name = e.target.value;
+        persistSoon();
+        renderOverlaySourceSelect();
+      });
+      item.querySelector(".ux-remove").addEventListener("click", () => {
+        session.screenshots = session.screenshots.filter((x) => x.id !== shot.id);
+        renderUxPreview();
+        persistSoon();
+        renderStorageInfo();
+      });
+      gallery.appendChild(item);
+    });
+  }
+  renderOverlaySourceSelect();
+}
+
+function renderOverlaySourceSelect() {
+  const sel = $("#overlaySource");
+  if (!sel) return;
+  const shots = session.screenshots || [];
+  const prevValue = sel.value;
+  sel.innerHTML = "";
+  if (!shots.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No UX references — add one in the Session tab";
+    sel.appendChild(opt);
+    return;
+  }
+  shots.forEach((shot) => {
+    const opt = document.createElement("option");
+    opt.value = shot.id;
+    opt.textContent = shot.name || "UX reference";
+    sel.appendChild(opt);
+  });
+  if (shots.some((s) => s.id === prevValue)) sel.value = prevValue;
 }
 
 // ============================================================================
@@ -381,8 +432,10 @@ function wireTools() {
   $("#pickElement").addEventListener("click", () => sendToTab(MSG.START_ELEMENT_PICK));
 
   $("#toggleOverlay").addEventListener("click", async () => {
-    if (!session.screenshot) return toast("Upload a UX reference first (Session tab)");
-    const res = await sendToTab(MSG.TOGGLE_OVERLAY, { dataUrl: session.screenshot });
+    const shots = session.screenshots || [];
+    if (!shots.length) return toast("Add a UX reference first (Session tab)");
+    const shot = shots.find((s) => s.id === $("#overlaySource").value) || shots[0];
+    const res = await sendToTab(MSG.TOGGLE_OVERLAY, { dataUrl: shot.dataUrl });
     if (res?.ok) $("#overlayHint").textContent = res.visible ? "Overlay shown — drag the bar to reposition." : "Overlay hidden.";
   });
 
@@ -1291,7 +1344,8 @@ function applyAnnotatedScreenshot(dataUrl) {
     renderBugs();
     toast("Screenshot saved as a bug entry");
   } else if (t.kind === "ux") {
-    session.screenshot = dataUrl;
+    session.screenshots = session.screenshots || [];
+    session.screenshots.push({ id: store.uid("ux"), name: "Annotated capture", dataUrl });
     renderUxPreview();
   }
   pendingAnnotateTarget = null;

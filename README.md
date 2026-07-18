@@ -1,10 +1,13 @@
 # ProTest QA — Web Testing & QA Companion
 
 A Manifest V3 Chrome extension that helps QA testers and developers test web
-features faster: run edge-case checklists, inject test data into forms, overlay
-a UX reference on the live page, capture annotated screenshots, record test
-steps with pass/fail evidence, and export a polished HTML / PDF / Jira-Markdown
-report — all from a side panel that lives next to the page under test.
+features faster. The core workflow: bring in a **user story (as text) and one
+or more UX reference screens**, then use those as the ground truth while you
+**test the live page** (edge cases, form injection, visual diffing against the
+UX screens) and **test the API behind it** (via a built-in Swagger/OpenAPI
+client) — capturing annotated evidence and filing bugs to Jira/TFS as you go,
+finishing with a polished HTML / PDF / Jira-Markdown report — all from a side
+panel that lives next to the page under test.
 
 > Suggested product name: **ProTest QA** (the brief proposed "EdgeTestr QA").
 > Rename freely in `manifest.json` → `name`.
@@ -15,11 +18,11 @@ report — all from a side panel that lives next to the page under test.
 
 | Area | What you get |
 |------|--------------|
-| **Session management** | Create/load/delete sessions, each with a **User Story field that accepts either a link or the story text itself**, a Target URL, tester name, notes, and a UX reference screenshot. Everything auto-saves to `chrome.storage.local`. |
+| **Session management** | Create/load/delete sessions, each with a **User Story field that accepts either a link or the story text itself**, a Target URL, tester name, notes, and **multiple UX reference screens** (drag/drop/paste several images, each individually named and removable). Everything auto-saves to `chrome.storage.local`. |
 | **Element inspector** | Hover to highlight any element; click to copy a stable CSS selector. |
 | **Test-data injector** (Bug Magnet style) | One click fills the focused field (or every field) with edge-case values: empty/whitespace, long text, numbers, special chars, emoji/RTL, inert XSS/SQL probes, format strings, and more. |
 | **Fake identity fill** | Smart-fills a whole form (name, email, phone, password, address…) by matching field roles. |
-| **UX overlay** | Overlays your uploaded reference screenshot semi-transparently on the live page — adjust opacity, scale, drag to align, or switch to `difference` blend to spot pixel diffs. |
+| **UX overlay** | Overlays a chosen reference screen (pick from a dropdown if you have more than one) semi-transparently on the live page — adjust opacity, scale, drag to align, or switch to `difference` blend to spot pixel diffs. |
 | **Screenshot + annotator** | Capture the visible tab and mark it up with rectangles, arrows, text, and **blur/redaction**, then attach it to a step or bug. |
 | **Test steps** | Record steps with PASS / FAIL / BLOCKED status, notes, and screenshots. |
 | **Edge-case checklist** | Load a categorized template (validation, security, a11y, responsive…) and tick items off. |

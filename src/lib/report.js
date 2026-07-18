@@ -97,6 +97,13 @@ export function buildHtmlReport(session) {
     )
     .join("") || `<li class="muted">No edge cases tracked.</li>`;
 
+  const uxHtml = (session.screenshots || [])
+    .map(
+      (shot) =>
+        `<figure><img src="${shot.dataUrl}" alt="${esc(shot.name || "UX reference")}"/><figcaption class="muted" style="margin-top:4px;font-size:12px">${esc(shot.name || "UX reference")}</figcaption></figure>`
+    )
+    .join("");
+
   const logsHtml = (session.logs || [])
     .slice(0, 100)
     .map(
@@ -163,7 +170,7 @@ export function buildHtmlReport(session) {
 
   ${session.notes ? `<h2>Notes</h2><div class="card"><p class="notes">${esc(session.notes)}</p></div>` : ""}
 
-  ${session.screenshot ? `<h2>UX reference</h2><div class="ref"><figure><img src="${session.screenshot}" alt="UX reference"/></figure></div>` : ""}
+  ${uxHtml ? `<h2>UX reference screens</h2><div class="ref">${uxHtml}</div>` : ""}
 
   <h2>Test steps</h2>
   ${stepsHtml || `<p class="muted">No steps recorded.</p>`}

@@ -154,6 +154,55 @@ body {
   margin-bottom: 8px;
 }
 
+/* ---- UX reference gallery (multiple screens per session) ----------------- */
+.ux-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.ux-gallery-item {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elev);
+}
+.ux-gallery-item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--bg-elev-2);
+}
+.ux-gallery-item .ux-name {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  padding: 5px 6px;
+  font-weight: 600;
+  outline: none;
+}
+.ux-gallery-item .ux-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ux-gallery-item .ux-remove:hover { background: var(--danger); }
+
 /* ---- tools -------------------------------------------------------------- */
 .tool-card + .tool-card { margin-top: 12px; }
 .tool-title { font-weight: 700; font-size: 13px; margin-bottom: 2px; }

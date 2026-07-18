@@ -134,18 +134,15 @@
         </div>
 
         <div class="field">
-          <label>UX reference screenshot</label>
+          <label>UX reference screens</label>
           <div class="dropzone" id="uxDrop">
-            <input type="file" id="uxFile" accept="image/*" hidden />
-            <div id="uxEmpty" class="dz-empty">
+            <input type="file" id="uxFile" accept="image/*" multiple hidden />
+            <div class="dz-empty">
               <span>🖼️</span>
-              <p>Drop an image, paste, or <button class="linkbtn" id="uxBrowse">browse</button></p>
-            </div>
-            <div id="uxPreview" class="dz-preview" hidden>
-              <img id="uxImg" alt="UX reference" />
-              <button class="btn sm danger" id="uxClear">Remove</button>
+              <p>Drop one or more screens, paste, or <button class="linkbtn" id="uxBrowse">browse</button></p>
             </div>
           </div>
+          <div id="uxGallery" class="ux-gallery"></div>
         </div>
 
         <p class="muted tiny" id="storageInfo"></p>
@@ -179,7 +176,8 @@
 
         <div class="card tool-card">
           <div class="tool-title">🖼️ UX overlay</div>
-          <p class="muted tiny">Overlay the reference screenshot on the live page to spot diffs.</p>
+          <p class="muted tiny">Overlay a reference screen semi-transparently on the live page to spot diffs.</p>
+          <select class="input sm" id="overlaySource" style="margin-bottom: 8px"></select>
           <button class="btn sm" id="toggleOverlay">Toggle overlay on page</button>
           <p class="muted tiny" id="overlayHint"></p>
         </div>
