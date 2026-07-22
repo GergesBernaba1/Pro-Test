@@ -30,8 +30,11 @@ const DEFAULT_SETTINGS = {
 // ---- low-level helpers -----------------------------------------------------
 
 function get(key, fallback) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(key, (res) => resolve(res[key] ?? fallback));
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(key, (res) => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve(res[key] ?? fallback);
+    });
   });
 }
 
@@ -53,7 +56,7 @@ export function uid(prefix = "id") {
 
 export async function getSessions() {
   const sessions = await get(KEYS.SESSIONS, []);
-  return sessions.map(migrateSession);
+  return Array.isArray(sessions) ? sessions.map(migrateSession) : [];
 }
 
 export async function getActiveSessionId() {
@@ -146,7 +149,8 @@ export function getBytesInUse() {
 // session's Steps tab (e.g. a recurring "login flow" or "checkout" checklist).
 
 export async function getTemplates() {
-  return get(KEYS.TEMPLATES, []);
+  const templates = await get(KEYS.TEMPLATES, []);
+  return Array.isArray(templates) ? templates : [];
 }
 
 export async function saveTemplate(template) {

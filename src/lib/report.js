@@ -11,6 +11,13 @@ function esc(s = "") {
     .replace(/"/g, "&quot;");
 }
 
+function safeImageSrc(src = "") {
+  const value = String(src).trim();
+  return /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value)
+    ? value.replace(/\s/g, "")
+    : "";
+}
+
 // The "user story" field accepts either a link (Jira/Confluence/requirements
 // doc) or the story text itself pasted directly — render each appropriately.
 function isUrl(str) {
@@ -72,7 +79,7 @@ export function buildHtmlReport(session) {
           ${statusBadge(step.status)}
         </div>
         ${step.notes ? `<p class="notes">${esc(step.notes)}</p>` : ""}
-        ${step.screenshot ? `<img class="shot" src="${step.screenshot}" alt="Step ${i + 1} screenshot"/>` : ""}
+        ${safeImageSrc(step.screenshot) ? `<img class="shot" src="${esc(safeImageSrc(step.screenshot))}" alt="Step ${i + 1} screenshot"/>` : ""}
       </div>`
     )
     .join("");
@@ -86,7 +93,7 @@ export function buildHtmlReport(session) {
           ${severityBadge(f.severity)}
         </div>
         ${f.description ? `<p class="notes">${esc(f.description)}</p>` : ""}
-        ${f.screenshot ? `<img class="shot" src="${f.screenshot}" alt="Finding screenshot"/>` : ""}
+        ${safeImageSrc(f.screenshot) ? `<img class="shot" src="${esc(safeImageSrc(f.screenshot))}" alt="Finding screenshot"/>` : ""}
       </div>`
     )
     .join("") || `<p class="muted">No bugs recorded — nice.</p>`;
@@ -100,7 +107,9 @@ export function buildHtmlReport(session) {
   const uxHtml = (session.screenshots || [])
     .map(
       (shot) =>
-        `<figure><img src="${shot.dataUrl}" alt="${esc(shot.name || "UX reference")}"/><figcaption class="muted" style="margin-top:4px;font-size:12px">${esc(shot.name || "UX reference")}</figcaption></figure>`
+        safeImageSrc(shot.dataUrl)
+          ? `<figure><img src="${esc(safeImageSrc(shot.dataUrl))}" alt="${esc(shot.name || "UX reference")}"/><figcaption class="muted" style="margin-top:4px;font-size:12px">${esc(shot.name || "UX reference")}</figcaption></figure>`
+          : ""
     )
     .join("");
 

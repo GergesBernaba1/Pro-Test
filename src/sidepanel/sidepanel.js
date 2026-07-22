@@ -300,13 +300,20 @@ function wireExportImport() {
         : data.screenshot // older export format — a single dataURL
         ? [{ id: store.uid("ux"), name: "UX reference", dataUrl: data.screenshot }]
         : [];
+      const validatedScreenshots = screenshots
+        .filter((shot) => isImageDataUrl(shot?.dataUrl))
+        .map((shot) => ({
+          id: store.uid("ux"),
+          name: String(shot.name || "UX reference"),
+          dataUrl: shot.dataUrl.trim(),
+        }));
       const imported = store.newSessionObject({
         name: `${data.name || "Imported session"} (imported)`,
         userStoryUrl: data.userStoryUrl,
         targetUrl: data.targetUrl,
         testerName: data.testerName,
         notes: data.notes,
-        screenshots,
+        screenshots: validatedScreenshots,
       });
       imported.steps = Array.isArray(data.steps) ? data.steps : [];
       imported.edgeCases = Array.isArray(data.edgeCases) ? data.edgeCases : [];
@@ -713,11 +720,11 @@ function renderApiResponse({ status, statusText, duration, body, ok }) {
 function copyCurl() {
   if (!lastApiRequest) return toast("Send a request first");
   const { method, url, headers, body } = lastApiRequest;
-  let cmd = `curl -X ${method} '${url}'`;
+  let cmd = `curl -X ${method} ${shellQuote(url)}`;
   Object.entries(headers || {}).forEach(([k, v]) => {
-    cmd += ` \\\n  -H '${k}: ${v}'`;
+    cmd += ` \\\n  -H ${shellQuote(`${k}: ${v}`)}`;
   });
-  if (body) cmd += ` \\\n  -d '${body.replace(/'/g, `'\\''`)}'`;
+  if (body) cmd += ` \\\n  -d ${shellQuote(body)}`;
   navigator.clipboard.writeText(cmd);
   toast("curl command copied");
 }
@@ -1451,4 +1458,12 @@ function toast(msg) {
 
 function escapeHtml(s = "") {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function isImageDataUrl(value) {
+  return /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(String(value || "").trim());
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
