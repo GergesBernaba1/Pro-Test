@@ -15,6 +15,11 @@ let session = null; // the active session object
 let pendingAnnotateTarget = null; // { kind: 'ux'|'step'|'bug', id? } awaiting an annotated screenshot
 let logFilter = "errors"; // 'errors' | 'all' — which set the Report tab's log viewer shows
 let liveLogs = []; // ALL network/console entries seen this panel session (in-memory only, not persisted)
+let edgeSweepRunning = false;
+let edgeSweepTabId = null;
+let generatedCases = [];
+let generatedCasesRunning = false;
+let generatedCasesTabId = null;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
@@ -92,6 +97,7 @@ function wireSettings() {
 
   $("#trackerTabJira").addEventListener("click", () => setTrackerTab("jira"));
   $("#trackerTabTfs").addEventListener("click", () => setTrackerTab("tfs"));
+  $("#trackerTabAi").addEventListener("click", () => setTrackerTab("ai"));
 
   $("#settingsToggle").addEventListener("click", async () => {
     const s = await store.getSettings();
@@ -105,6 +111,11 @@ function wireSettings() {
     $("#tfsPat").value = s.tfsPat || "";
     $("#tfsApiVersion").value = s.tfsApiVersion || "6.0";
     $("#tfsStatus").textContent = "";
+    $("#aiProvider").value = s.aiProvider || "none";
+    $("#aiBaseUrl").value = s.aiBaseUrl || "";
+    $("#aiModel").value = s.aiModel || "";
+    $("#aiApiKey").value = s.aiApiKey || "";
+    $("#aiStatus").textContent = "";
     // Open on whichever tracker already has credentials, so returning users
     // land where they left off rather than always on Jira.
     setTrackerTab(isTfsConfigured(s) && !isJiraConfigured(s) ? "tfs" : "jira");
@@ -137,6 +148,12 @@ function wireSettings() {
     await store.saveSettings(currentTfsFields());
     toast("TFS settings saved");
     renderBugs(); // refresh "File in TFS" availability
+  });
+
+  $("#saveAiSettings").addEventListener("click", async () => {
+    await store.saveSettings(currentAiFields());
+    $("#aiStatus").textContent = "AI settings saved.";
+    toast("AI settings saved");
   });
 
   $("#testTfsConnection").addEventListener("click", async () => {
@@ -173,11 +190,22 @@ function currentTfsFields() {
   };
 }
 
+function currentAiFields() {
+  return {
+    aiProvider: $("#aiProvider").value,
+    aiBaseUrl: $("#aiBaseUrl").value.trim(),
+    aiModel: $("#aiModel").value.trim(),
+    aiApiKey: $("#aiApiKey").value.trim(),
+  };
+}
+
 function setTrackerTab(tracker) {
   $("#trackerTabJira").classList.toggle("active", tracker === "jira");
   $("#trackerTabTfs").classList.toggle("active", tracker === "tfs");
+  $("#trackerTabAi").classList.toggle("active", tracker === "ai");
   $("#jiraSettingsPanel").hidden = tracker !== "jira";
   $("#tfsSettingsPanel").hidden = tracker !== "tfs";
+  $("#aiSettingsPanel").hidden = tracker !== "ai";
 }
 
 // ============================================================================
@@ -453,6 +481,11 @@ function wireTools() {
   $("#captureFullPageBtn").addEventListener("click", () => captureFullPageAndAnnotate());
 
   $("#fillIdentity").addEventListener("click", () => fillIdentity());
+  $("#generateScreenCases").addEventListener("click", () => generateScreenCases());
+  $("#runGeneratedCases").addEventListener("click", () => runGeneratedCases());
+  $("#stopGeneratedCases").addEventListener("click", () => stopGeneratedCases());
+  $("#runEdgeSweep").addEventListener("click", () => runEdgeSweep());
+  $("#stopEdgeSweep").addEventListener("click", () => stopEdgeSweep());
 
   // Test-data list.
   renderDataList();
@@ -528,13 +561,16 @@ function renderA11yResults(issues, truncated) {
 // ---- API tester (Swagger / OpenAPI) -----------------------------------------
 let apiSpec = null; // { baseUrl, endpoints } — see lib/openapi.js
 let lastApiRequest = null; // { method, url, headers, body } — for "Copy as curl"
+let apiBearerToken = "";
 
 function wireApiTester() {
   $("#loadApiSpecUrl").addEventListener("click", loadApiSpecFromUrl);
   $("#loadApiSpecJson").addEventListener("click", loadApiSpecFromTextarea);
+  $("#apiLoginBtn").addEventListener("click", loginApiUser);
   $("#apiEndpointSelect").addEventListener("change", renderApiParams);
   $("#sendApiRequest").addEventListener("click", sendApiRequest);
   $("#copyCurl").addEventListener("click", copyCurl);
+  $("#runControllerApis").addEventListener("click", runControllerApis);
 }
 
 async function loadApiSpecFromUrl() {
@@ -542,12 +578,34 @@ async function loadApiSpecFromUrl() {
   if (!url) return toast("Enter a spec URL");
   $("#apiSpecStatus").textContent = "Loading…";
   try {
-    const res = await fetch(url);
+    const specUrl = await resolveSwaggerSpecUrl(url);
+    const res = await fetch(specUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    applySpec(await res.json());
+    applySpec(await res.json(), specUrl);
   } catch (e) {
     $("#apiSpecStatus").textContent = `✗ ${e.message}. Only JSON specs are supported — if yours is YAML, convert it or paste the JSON below.`;
   }
+}
+
+async function resolveSwaggerSpecUrl(url) {
+  const trimmed = url.trim();
+  if (/\.json($|\?)/i.test(trimmed)) return trimmed;
+  const res = await fetch(trimmed);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+  const direct = html.match(/url:\s*["']([^"']+\.json[^"']*)["']/i)?.[1] || html.match(/["']([^"']+swagger[^"']*\.json[^"']*)["']/i)?.[1];
+  if (direct) return new URL(direct, trimmed).href;
+  const u = new URL(trimmed);
+  const candidates = [
+    new URL("/swagger/v1/swagger.json", u.origin).href,
+    new URL("/swagger/v1/openapi.json", u.origin).href,
+    new URL("../v1/swagger.json", trimmed.endsWith("/") ? trimmed : `${trimmed}/`).href,
+  ];
+  for (const candidate of candidates) {
+    const check = await fetch(candidate).catch(() => null);
+    if (check?.ok) return candidate;
+  }
+  throw new Error("Could not discover swagger.json from this URL");
 }
 
 function loadApiSpecFromTextarea() {
@@ -560,7 +618,7 @@ function loadApiSpecFromTextarea() {
   }
 }
 
-function applySpec(json) {
+function applySpec(json, sourceUrl = "") {
   try {
     apiSpec = parseSpec(json);
   } catch (e) {
@@ -572,13 +630,15 @@ function applySpec(json) {
     return;
   }
   $("#apiSpecStatus").textContent = `✓ Loaded ${apiSpec.endpoints.length} endpoint${apiSpec.endpoints.length > 1 ? "s" : ""}`;
+  if (!apiSpec.baseUrl && sourceUrl) apiSpec.baseUrl = new URL(sourceUrl).origin;
   $("#apiBaseUrl").value = apiSpec.baseUrl || "";
+  if (!$("#apiLoginUrl").value.trim()) $("#apiLoginUrl").value = guessLoginUrl(apiSpec.baseUrl || (sourceUrl ? new URL(sourceUrl).origin : ""));
   const sel = $("#apiEndpointSelect");
   sel.innerHTML = "";
   apiSpec.endpoints.forEach((ep, i) => {
     const opt = document.createElement("option");
     opt.value = i;
-    opt.textContent = `${ep.method} ${ep.path}${ep.summary ? " — " + ep.summary : ""}`;
+    opt.textContent = `${ep.method} ${ep.path}${ep.tags?.length ? ` [${ep.tags.join(", ")}]` : ""}${ep.summary ? " — " + ep.summary : ""}`;
     sel.appendChild(opt);
   });
   $("#apiTesterBody").hidden = false;
@@ -635,6 +695,59 @@ function parseExtraHeaders() {
   return headers;
 }
 
+function guessLoginUrl(baseUrl) {
+  return baseUrl ? `${baseUrl.replace(/\/+$/, "")}/api/Auth/Login` : "";
+}
+
+async function loginApiUser() {
+  const url = $("#apiLoginUrl").value.trim();
+  const email = $("#apiLoginEmail").value.trim();
+  const password = $("#apiLoginPassword").value;
+  const role = $("#apiLoginRole").value.trim();
+  if (!url || !email || !password) return toast("Enter login URL, email, and password");
+
+  $("#apiSpecStatus").textContent = "Logging in...";
+  const payload = { email, userName: email, username: email, password };
+  if (role) payload.role = role;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(extractApiError(data) || `HTTP ${res.status}`);
+    const token = findToken(data);
+    if (!token) throw new Error("Login succeeded but no token was found in the response");
+    apiBearerToken = token;
+    const headers = parseExtraHeaders();
+    headers.Authorization = `Bearer ${apiBearerToken}`;
+    $("#apiExtraHeaders").value = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join("\n");
+    $("#apiSpecStatus").textContent = "Logged in and Authorization header added.";
+    toast("API token ready");
+  } catch (e) {
+    $("#apiSpecStatus").textContent = `Login failed: ${e.message}`;
+  }
+}
+
+function findToken(value) {
+  if (!value || typeof value !== "object") return "";
+  const tokenKeys = ["token", "accessToken", "access_token", "jwt", "bearerToken"];
+  for (const key of tokenKeys) {
+    if (typeof value[key] === "string" && value[key]) return value[key];
+  }
+  for (const nested of Object.values(value)) {
+    const found = findToken(nested);
+    if (found) return found;
+  }
+  return "";
+}
+
+function extractApiError(data) {
+  return data?.message || data?.error || data?.title || (Array.isArray(data?.errors) ? data.errors.join("; ") : "");
+}
+
 async function sendApiRequest() {
   const ep = currentEndpoint();
   if (!ep) return toast("Load a spec and pick an endpoint first");
@@ -644,6 +757,7 @@ async function sendApiRequest() {
   let path = ep.path;
   const query = new URLSearchParams();
   const headers = parseExtraHeaders();
+  if (apiBearerToken && !headers.Authorization) headers.Authorization = `Bearer ${apiBearerToken}`;
   Object.entries(values).forEach(([name, { value, in: loc }]) => {
     if (!value) return;
     if (loc === "path") path = path.replace(`{${name}}`, encodeURIComponent(value));
@@ -692,6 +806,115 @@ async function sendApiRequest() {
     btn.disabled = false;
     btn.textContent = "Send request";
   }
+}
+
+async function runControllerApis() {
+  if (!apiSpec) return toast("Load a spec first");
+  const filter = $("#apiControllerFilter").value.trim().toLowerCase();
+  if (!filter) return toast("Enter a controller/tag filter first");
+  const endpoints = apiSpec.endpoints.filter((ep) => {
+    const haystack = `${ep.path} ${(ep.tags || []).join(" ")} ${ep.operationId || ""} ${ep.summary || ""}`.toLowerCase();
+    return haystack.includes(filter);
+  });
+  if (!endpoints.length) return toast("No endpoints matched that controller/tag");
+  if (!confirm(`Run ${endpoints.length} endpoint${endpoints.length === 1 ? "" : "s"} matching "${filter}"?`)) return;
+
+  const btn = $("#runControllerApis");
+  btn.disabled = true;
+  btn.textContent = "Running...";
+  const results = [];
+  for (const ep of endpoints) {
+    const req = buildEndpointRequest(ep);
+    if (req.error) {
+      results.push({ ep, ok: false, status: "ERR", message: req.error });
+      continue;
+    }
+    const start = Date.now();
+    try {
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: req.body });
+      const duration = Date.now() - start;
+      const text = await res.text();
+      results.push({ ep, ok: res.ok, status: res.status, message: `${res.statusText || ""} (${duration}ms) ${text.slice(0, 300)}`.trim() });
+    } catch (e) {
+      results.push({ ep, ok: false, status: "ERR", message: e.message });
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = "Run controller";
+  renderControllerRunResults(results);
+}
+
+function buildEndpointRequest(ep) {
+  const baseUrl = $("#apiBaseUrl").value.trim().replace(/\/+$/, "");
+  if (!baseUrl) return { error: "Base URL is required" };
+  let path = ep.path;
+  const query = new URLSearchParams();
+  const headers = parseExtraHeaders();
+  if (apiBearerToken && !headers.Authorization) headers.Authorization = `Bearer ${apiBearerToken}`;
+
+  (ep.parameters || []).forEach((p) => {
+    const value = sampleParamValue(p);
+    if (p.in === "path") path = path.replace(`{${p.name}}`, encodeURIComponent(value));
+    else if (p.in === "query" && value !== "") query.set(p.name, value);
+    else if (p.in === "header" && value !== "") headers[p.name] = value;
+  });
+
+  let body;
+  if (["POST", "PUT", "PATCH"].includes(ep.method) || ep.bodyExample != null) {
+    const sample = sampleBody(ep.bodyExample);
+    body = JSON.stringify(sample);
+    headers["Content-Type"] = headers["Content-Type"] || ep.contentType || "application/json";
+  }
+  const qs = query.toString();
+  return { method: ep.method, url: `${baseUrl}${path}${qs ? `?${qs}` : ""}`, headers, body };
+}
+
+function sampleParamValue(p) {
+  const name = `${p.name || ""}`.toLowerCase();
+  if (p.example != null) return p.example;
+  if (p.schema?.example != null) return p.schema.example;
+  if (p.default != null) return p.default;
+  if (/id$|guid|uuid/.test(name)) return "1";
+  if (/page/.test(name)) return "1";
+  if (/size|count|limit/.test(name)) return "10";
+  if (/search|name|title|query/.test(name)) return "test";
+  return "test";
+}
+
+function sampleBody(example) {
+  if (example == null || typeof example !== "object") return {};
+  return JSON.parse(JSON.stringify(example), (key, value) => {
+    const k = key.toLowerCase();
+    if (value === "") {
+      if (/email/.test(k)) return $("#apiLoginEmail").value.trim() || "qa.tester@example.com";
+      if (/password/.test(k)) return "Test@12345";
+      if (/phone|mobile/.test(k)) return "+966500000000";
+      if (/name|title/.test(k)) return "اختبار آلي";
+      if (/description|desc/.test(k)) return "بيانات اختبار آلي";
+      return "test";
+    }
+    if (value === 0 && /id$/.test(k)) return 1;
+    return value;
+  });
+}
+
+function renderControllerRunResults(results) {
+  const passed = results.filter((r) => r.ok).length;
+  const failed = results.length - passed;
+  const body = results
+    .map((r) => `${r.ok ? "PASS" : "FAIL"} ${r.ep.method} ${r.ep.path} -> ${r.status} ${r.message || ""}`)
+    .join("\n");
+  renderApiResponse({ status: failed ? "DONE" : "OK", statusText: `${passed} passed, ${failed} failed`, duration: 0, body, ok: failed === 0 });
+  session.steps.push({
+    id: store.uid("step"),
+    title: `API controller run: ${$("#apiControllerFilter").value.trim()}`,
+    status: failed ? "fail" : "pass",
+    notes: body,
+    screenshot: null,
+    createdAt: new Date().toISOString(),
+  });
+  renderSteps();
+  persistSoon();
 }
 
 function renderApiResponse({ status, statusText, duration, body, ok }) {
@@ -868,6 +1091,254 @@ async function fillIdentity() {
   else toast(res?.reason || "No recognizable form fields found");
 }
 
+async function generateScreenCases() {
+  const status = $("#generatedCasesStatus");
+  status.textContent = "Reading current screen...";
+  const tab = await getRunnableTab();
+  if (!tab) return toast("Open the target page, or set Target page URL to an open tab");
+  const model = await sendToTabId(tab.id, MSG.GET_SCREEN_MODEL, {}, tab);
+  if (!model?.ok) {
+    status.textContent = "";
+    return toast(model?.reason || "Could not read the screen");
+  }
+
+  generatedCases = buildLocalCases(model);
+  renderGeneratedCases();
+  status.textContent = `Generated ${generatedCases.length} case${generatedCases.length === 1 ? "" : "s"} from ${model.actions.length} actions and ${model.fields.length} fields.`;
+}
+
+function buildLocalCases(model) {
+  const cases = [];
+  const createAction = model.actions.find((a) => a.kind === "create") || model.actions.find((a) => /add|create|new|إضافة|جديد/i.test(a.label));
+  const searchAction = model.actions.find((a) => a.kind === "search");
+  const navActions = model.actions.filter((a) => !["delete", "submit"].includes(a.kind)).slice(0, 6);
+
+  if (createAction) {
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: `Open create flow: ${createAction.label}`,
+      steps: [
+        { action: "click", selector: createAction.selector, label: createAction.label },
+        { action: "validate", expect: "Create form, modal, or navigation should appear." },
+      ],
+    });
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: "Validate required fields in create flow",
+      steps: [
+        { action: "click", selector: createAction.selector, label: createAction.label },
+        { action: "fill", value: "empty" },
+        { action: "click", label: "save" },
+        { action: "validate", expect: "Required validation messages should appear and no invalid record should be saved." },
+      ],
+    });
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: "Create with valid tester data",
+      steps: [
+        { action: "click", selector: createAction.selector, label: createAction.label },
+        { action: "fill", value: "valid" },
+        { action: "click", label: "save" },
+        { action: "validate", expect: "Save should complete or show a clear validation/server message." },
+      ],
+    });
+  }
+
+  if (model.fields.length) {
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: "Fill visible fields with valid data",
+      steps: [
+        { action: "fill", value: "valid" },
+        { action: "validate", expect: "Fields should accept valid tester data without UI errors." },
+      ],
+    });
+  }
+
+  if (searchAction || model.fields.some((f) => /search|بحث/i.test(f.label))) {
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: "Search/filter visible records",
+      steps: [
+        { action: "fill", value: "valid" },
+        searchAction ? { action: "click", selector: searchAction.selector, label: searchAction.label } : { action: "validate", expect: "Search field should filter or accept query." },
+        { action: "validate", expect: "Results should update or show an empty-state message." },
+      ],
+    });
+  }
+
+  navActions.forEach((action) => {
+    cases.push({
+      id: store.uid("case"),
+      enabled: true,
+      title: `Open action: ${action.label}`,
+      steps: [
+        { action: "click", selector: action.selector, label: action.label },
+        { action: "validate", expect: "Screen should respond without console/network errors." },
+      ],
+    });
+  });
+
+  return cases.length ? cases : [{ id: store.uid("case"), enabled: true, title: "Smoke visible screen actions", steps: [{ action: "validate", expect: "No actionable controls were detected." }] }];
+}
+
+function renderGeneratedCases() {
+  const list = $("#generatedCasesList");
+  list.innerHTML = "";
+  if (!generatedCases.length) {
+    list.innerHTML = `<p class="muted tiny">No generated cases yet.</p>`;
+    return;
+  }
+  generatedCases.forEach((testCase) => {
+    const row = document.createElement("label");
+    row.className = "case-row";
+    row.innerHTML = `<input type="checkbox" ${testCase.enabled ? "checked" : ""} /><span>${escapeHtml(testCase.title)}</span>`;
+    row.querySelector("input").addEventListener("change", (e) => {
+      testCase.enabled = e.target.checked;
+    });
+    list.appendChild(row);
+  });
+}
+
+async function runGeneratedCases() {
+  if (generatedCasesRunning) return toast("Generated cases are already running");
+  const selected = generatedCases.filter((c) => c.enabled);
+  if (!selected.length) return toast("Generate and select at least one case first");
+  if (!confirm(`Run ${selected.length} generated case${selected.length === 1 ? "" : "s"} on the target page?`)) return;
+
+  const tab = await getRunnableTab();
+  if (!tab) return toast("Open the target page, or set Target page URL to an open tab");
+  generatedCasesRunning = true;
+  generatedCasesTabId = tab.id;
+  $("#runGeneratedCases").disabled = true;
+  $("#stopGeneratedCases").hidden = false;
+  $("#generatedCasesStatus").textContent = `Running ${selected.length} generated case${selected.length === 1 ? "" : "s"}...`;
+
+  try {
+    const res = await sendToTabId(generatedCasesTabId, MSG.RUN_GENERATED_CASES, { cases: selected }, tab);
+    if (!res?.ok) return toast(res?.reason || "Generated case run failed");
+    (res.results || []).forEach((result) => {
+      session.steps.push({
+        id: store.uid("step"),
+        title: result.title,
+        status: result.status || "untested",
+        notes: result.notes || "",
+        screenshot: null,
+        createdAt: new Date().toISOString(),
+      });
+    });
+    renderSteps();
+    persistSoon();
+    $("#generatedCasesStatus").textContent = `${res.stopped ? "Stopped" : "Completed"}: ${(res.results || []).length}/${selected.length} cases.`;
+    toast("Generated case results added to Steps");
+  } finally {
+    generatedCasesRunning = false;
+    generatedCasesTabId = null;
+    $("#runGeneratedCases").disabled = false;
+    $("#stopGeneratedCases").hidden = true;
+  }
+}
+
+async function stopGeneratedCases() {
+  if (!generatedCasesRunning || generatedCasesTabId == null) return;
+  $("#generatedCasesStatus").textContent = "Stopping after the current step...";
+  const res = await sendToTabId(generatedCasesTabId, MSG.STOP_GENERATED_CASES);
+  if (!res?.ok) toast(res?.reason || "Couldn't stop generated cases");
+}
+
+async function runEdgeSweep() {
+  if (edgeSweepRunning) return toast("Edge sweep is already running");
+  const mode = $("#sweepMode").value;
+  const clickActions = $("#sweepClickActions").checked;
+  if (clickActions && !confirm(`Run ${modeLabel(mode)} and click visible actions on the page? Use this only on a safe test environment.`)) return;
+
+  const cases = sweepCasesForMode(mode);
+  const tab = await getRunnableTab();
+  if (!tab) return toast("Open the target page, or set Target page URL to an open tab");
+  const btn = $("#runEdgeSweep");
+  const stopBtn = $("#stopEdgeSweep");
+  const status = $("#sweepStatus");
+  edgeSweepRunning = true;
+  edgeSweepTabId = tab.id;
+  btn.disabled = true;
+  stopBtn.hidden = false;
+  status.textContent = `Running ${modeLabel(mode)} on the selected tab...`;
+
+  try {
+    const res = await sendToTabId(edgeSweepTabId, MSG.RUN_EDGE_SWEEP, { cases, options: { clickActions, mode, actionOnly: mode === "actions" } });
+    if (!res?.ok) {
+      status.textContent = "";
+      return toast(res?.reason || "Edge sweep failed");
+    }
+
+    ensureEdgeTemplateLoaded();
+    const resultLabel = res.stopped ? "Stopped edge sweep" : "Automated edge sweep";
+    const note = [
+      `${res.stopped ? "Stopped by tester after" : "Ran"} ${res.cases}/${res.totalCases || res.cases} pass(es) against ${res.fields} editable field(s). Mode: ${modeLabel(mode)}.`,
+      `Field writes: ${res.filled}. Visible actions found: ${res.actions || 0}. Action clicks: ${res.clicks}.`,
+      res.failures?.length ? `Runner errors:\n- ${res.failures.join("\n- ")}` : "No runner errors were reported by the extension.",
+      "Review validation messages, console/network logs, and add real failures in Bugs.",
+    ].join("\n");
+
+    session.steps.push({
+      id: store.uid("step"),
+      title: `${resultLabel}: ${modeLabel(mode)} (${res.cases}/${res.totalCases || res.cases})`,
+      status: "untested",
+      notes: note,
+      screenshot: null,
+      createdAt: new Date().toISOString(),
+    });
+    renderSteps();
+    renderEdge();
+    persistSoon();
+    status.textContent = `${res.stopped ? "Stopped" : "Completed"}: ${res.cases}/${res.totalCases || res.cases} cases, ${res.fields} fields, ${res.actions || 0} actions, ${res.clicks} clicks.`;
+    toast(`${res.stopped ? "Stopped" : "Completed"} edge sweep and added it to Steps`);
+  } finally {
+    edgeSweepRunning = false;
+    edgeSweepTabId = null;
+    btn.disabled = false;
+    stopBtn.hidden = true;
+  }
+}
+
+function sweepCasesForMode(mode) {
+  const all = flattenTestData();
+  if (mode === "actions") return [{ group: "Screen", label: "Click visible actions", value: "" }];
+  if (mode === "deep") return all;
+  const usefulLabels = new Set([
+    "Empty string",
+    "Leading/trailing spaces",
+    "256 chars",
+    "Large integer",
+    "Symbols",
+    "RTL Arabic",
+    "XSS <script>",
+    "Invalid email",
+  ]);
+  return all.filter((item) => usefulLabels.has(item.label));
+}
+
+function modeLabel(mode) {
+  return {
+    smart: "Smart screen test",
+    actions: "Actions only",
+    forms: "Forms only",
+    deep: "Deep edge cases",
+  }[mode] || "Smart screen test";
+}
+
+async function stopEdgeSweep() {
+  if (!edgeSweepRunning || edgeSweepTabId == null) return;
+  $("#sweepStatus").textContent = "Stopping after the current action...";
+  const res = await sendToTabId(edgeSweepTabId, MSG.STOP_EDGE_SWEEP);
+  if (!res?.ok) toast(res?.reason || "Couldn't stop the active sweep");
+}
+
 // ============================================================================
 // Steps
 // ============================================================================
@@ -1001,14 +1472,18 @@ async function renderTemplateSelect(selectId) {
 // ============================================================================
 // Edge cases
 // ============================================================================
+function ensureEdgeTemplateLoaded() {
+  const existing = new Set(session.edgeCases.map((e) => e.label));
+  EDGE_CASE_TEMPLATE.forEach((grp) =>
+    grp.items.forEach((label) => {
+      if (!existing.has(label)) session.edgeCases.push({ id: store.uid("edge"), group: grp.group, label, checked: false, notes: "" });
+    })
+  );
+}
+
 function wireEdge() {
   $("#loadEdgeTemplate").addEventListener("click", () => {
-    const existing = new Set(session.edgeCases.map((e) => e.label));
-    EDGE_CASE_TEMPLATE.forEach((grp) =>
-      grp.items.forEach((label) => {
-        if (!existing.has(label)) session.edgeCases.push({ id: store.uid("edge"), group: grp.group, label, checked: false, notes: "" });
-      })
-    );
+    ensureEdgeTemplateLoaded();
     renderEdge();
     persistSoon();
   });
@@ -1376,27 +1851,48 @@ async function getActiveTab() {
   return tab || null;
 }
 
+async function getRunnableTab() {
+  const active = await getActiveTab();
+  if (active && !isRestrictedPage(active.url)) return active;
+
+  const targetUrl = (session?.targetUrl || "").trim();
+  if (!targetUrl) return active;
+  const tabs = await chrome.tabs.query({});
+  return tabs.find((tab) => tab.url === targetUrl) || tabs.find((tab) => tab.url && targetUrl && tab.url.startsWith(targetUrl)) || active;
+}
+
 // Send a message to the content script in the active tab, injecting it first if
 // it hasn't loaded (e.g. the page loaded before the extension, or SPA nav).
 async function sendToTab(type, extra = {}) {
   const tab = await getActiveTab();
   if (!tab) return { ok: false, reason: "No active tab" };
-  if (/^(chrome|edge|about|chrome-extension|https:\/\/chrome\.google\.com\/webstore)/.test(tab.url || "")) {
+  return sendToTabId(tab.id, type, extra, tab);
+}
+
+async function sendToTabId(tabId, type, extra = {}, knownTab = null) {
+  const tab = knownTab || (await chrome.tabs.get(tabId).catch(() => null));
+  if (!tab) return { ok: false, reason: "Target tab is no longer available" };
+  if (isRestrictedPage(tab.url)) {
     toast("This tool can't run on browser/system pages");
     return { ok: false, reason: "restricted page" };
   }
   try {
-    return await chrome.tabs.sendMessage(tab.id, { type, ...extra });
+    return await chrome.tabs.sendMessage(tabId, { type, ...extra });
   } catch (_) {
     try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["src/content/content.js"] });
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content/content.css"] });
-      return await chrome.tabs.sendMessage(tab.id, { type, ...extra });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/monitor.js"], world: "MAIN" });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/content.js"] });
+      await chrome.scripting.insertCSS({ target: { tabId }, files: ["src/content/content.css"] });
+      return await chrome.tabs.sendMessage(tabId, { type, ...extra });
     } catch (e2) {
       toast("Couldn't reach the page — try reloading the tab");
       return { ok: false, reason: e2.message };
     }
   }
+}
+
+function isRestrictedPage(url = "") {
+  return /^(chrome|edge|about|chrome-extension|https:\/\/chrome\.google\.com\/webstore)/.test(url);
 }
 
 function captureAndAnnotate() {

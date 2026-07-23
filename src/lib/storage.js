@@ -25,6 +25,10 @@ const DEFAULT_SETTINGS = {
   tfsProject: "",
   tfsPat: "",
   tfsApiVersion: "6.0",
+  aiProvider: "none",
+  aiBaseUrl: "",
+  aiModel: "",
+  aiApiKey: "",
 };
 
 // ---- low-level helpers -----------------------------------------------------

@@ -7,7 +7,15 @@
 // strings are inlined here (kept in sync with src/lib/messages.js).
 
 (() => {
-  if (window.__protestContentLoaded) return; // guard against double-injection
+  if (!extensionRuntimeAvailable()) return;
+
+  if (window.__protestOnMessage) {
+    try {
+      chrome.runtime.onMessage.removeListener(window.__protestOnMessage);
+    } catch (_) {
+      // The previous extension context may have been invalidated by reload/update.
+    }
+  }
   window.__protestContentLoaded = true;
 
   const MSG = {
@@ -16,6 +24,11 @@
     START_ELEMENT_PICK: "protest/start-element-pick",
     INJECT_TEST_DATA: "protest/inject-test-data",
     INJECT_IDENTITY: "protest/inject-identity",
+    RUN_EDGE_SWEEP: "protest/run-edge-sweep",
+    STOP_EDGE_SWEEP: "protest/stop-edge-sweep",
+    GET_SCREEN_MODEL: "protest/get-screen-model",
+    RUN_GENERATED_CASES: "protest/run-generated-cases",
+    STOP_GENERATED_CASES: "protest/stop-generated-cases",
     TOGGLE_OVERLAY: "protest/toggle-overlay",
     UPDATE_OVERLAY: "protest/update-overlay",
     CLEAR_TOOLS: "protest/clear-tools",
@@ -29,17 +42,22 @@
     PAGE_LOG: "protest/page-log",
   };
 
+  const stopRequested = {
+    edgeSweep: false,
+    generatedCases: false,
+  };
+
   // ---- relay logs from the MAIN-world monitor -----------------------------
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     const data = event.data;
     if (data && data.__protest === "__PROTEST_LOG__" && data.entry) {
-      chrome.runtime.sendMessage({ type: MSG.PAGE_LOG, entry: data.entry }).catch(() => {});
+      safeRuntimeSend({ type: MSG.PAGE_LOG, entry: data.entry });
     }
   });
 
   // ---- command handler ----------------------------------------------------
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const onRuntimeMessage = (msg, sender, sendResponse) => {
     switch (msg?.type) {
       case MSG.PING:
         sendResponse({ ok: true, url: location.href, title: document.title });
@@ -57,6 +75,35 @@
         return true;
       case MSG.INJECT_IDENTITY:
         sendResponse(injectIdentity(msg.identity));
+        return true;
+      case MSG.RUN_EDGE_SWEEP:
+        (async () => {
+          try {
+            sendResponse(await runEdgeSweep(msg.cases || [], msg.options || {}));
+          } catch (err) {
+            sendResponse({ ok: false, reason: err.message || "Edge sweep failed" });
+          }
+        })();
+        return true;
+      case MSG.STOP_EDGE_SWEEP:
+        stopRequested.edgeSweep = true;
+        sendResponse({ ok: true });
+        return true;
+      case MSG.GET_SCREEN_MODEL:
+        sendResponse(getScreenModel());
+        return true;
+      case MSG.RUN_GENERATED_CASES:
+        (async () => {
+          try {
+            sendResponse(await runGeneratedCases(msg.cases || []));
+          } catch (err) {
+            sendResponse({ ok: false, reason: err.message || "Generated case run failed" });
+          }
+        })();
+        return true;
+      case MSG.STOP_GENERATED_CASES:
+        stopRequested.generatedCases = true;
+        sendResponse({ ok: true });
         return true;
       case MSG.TOGGLE_OVERLAY:
         overlay.toggle(msg.dataUrl);
@@ -101,7 +148,13 @@
       default:
         return false;
     }
-  });
+  };
+  try {
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+  } catch (_) {
+    return;
+  }
+  window.__protestOnMessage = onRuntimeMessage;
 
   // ======================================================================
   // Element inspector / highlighter
@@ -134,12 +187,12 @@
       e.preventDefault();
       e.stopPropagation();
       const selector = cssPath(el);
-      chrome.runtime.sendMessage({
+      safeRuntimeSend({
         type: MSG.ELEMENT_PICKED,
         selector,
         text: (el.textContent || "").trim().slice(0, 120),
         tag: el.tagName.toLowerCase(),
-      }).catch(() => {});
+      });
       if (pickOnce) disable();
     }
 
@@ -190,32 +243,261 @@
   // Test-data injector (Bug Magnet style)
   // ======================================================================
   function injectTestData(value, scope) {
-    const isEditable = (el) =>
-      el && ((el.tagName === "INPUT" && !["checkbox", "radio", "submit", "button", "file"].includes(el.type)) ||
-        el.tagName === "TEXTAREA" ||
-        el.isContentEditable);
-
     let targets = [];
     if (scope === "focused") {
       const a = document.activeElement;
       if (isEditable(a)) targets = [a];
     } else {
-      targets = [...document.querySelectorAll("input,textarea,[contenteditable=true]")].filter(isEditable);
+      targets = editableTargets();
     }
     if (!targets.length) return { ok: false, reason: "No editable field found. Click into a field first." };
 
     targets.forEach((el) => {
-      if (el.isContentEditable) {
-        el.textContent = value;
-      } else {
-        el.value = value;
-      }
-      // Fire the events frameworks (React/Vue/Angular) listen for.
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+      setEditableValue(el, value);
       flash(el);
     });
     return { ok: true, count: targets.length };
+  }
+
+  async function runEdgeSweep(cases, options) {
+    stopRequested.edgeSweep = false;
+    const targets = editableTargets();
+    if (!targets.length && !options.clickActions) return { ok: false, reason: "No editable fields found on this page. Enable visible actions or use Actions only mode." };
+
+    const values = options.actionOnly || !targets.length ? [{ label: "Visible actions", value: "" }] : cases.filter((c) => c && "value" in c);
+    if (!values.length) return { ok: false, reason: "No test cases were provided." };
+
+    const sampleFailures = [];
+    let filled = 0;
+    let clicks = 0;
+    let maxActions = 0;
+    let completedCases = 0;
+
+    for (const testCase of values) {
+      if (stopRequested.edgeSweep) break;
+      try {
+        if (!options.actionOnly) {
+          editableTargets().forEach((el) => {
+            setEditableValue(el, testCase.value);
+            filled++;
+          });
+        }
+        if (options.clickActions) {
+          const actions = actionTargets();
+          maxActions = Math.max(maxActions, actions.length);
+          for (const action of actions) {
+            if (stopRequested.edgeSweep) break;
+            flash(action);
+            action.click();
+            clicks++;
+            await sleep(180);
+          }
+        } else {
+          await sleep(25);
+        }
+        completedCases++;
+      } catch (err) {
+        sampleFailures.push(`${testCase.label || "case"}: ${err.message || err}`);
+      }
+    }
+
+    return {
+      ok: true,
+      cases: completedCases,
+      totalCases: values.length,
+      stopped: stopRequested.edgeSweep,
+      fields: targets.length,
+      filled,
+      actions: maxActions,
+      clicks,
+      failures: sampleFailures.slice(0, 5),
+    };
+  }
+
+  function isEditable(el) {
+    return (
+      el &&
+      ((el.tagName === "INPUT" && !["checkbox", "radio", "submit", "button", "file", "hidden"].includes(el.type)) ||
+        el.tagName === "TEXTAREA" ||
+        el.isContentEditable) &&
+      !el.disabled &&
+      !el.readOnly
+    );
+  }
+
+  function editableTargets() {
+    return [...document.querySelectorAll("input,textarea,[contenteditable=true]")].filter(isEditable);
+  }
+
+  function setEditableValue(el, value) {
+    if (el.isContentEditable) {
+      el.textContent = value;
+    } else {
+      el.value = value;
+    }
+    // Fire the events frameworks (React/Vue/Angular) listen for.
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function actionTargets() {
+    const selector = [
+      "button",
+      'input[type="button"]',
+      'input[type="submit"]',
+      'input[type="reset"]',
+      "a[href]",
+      '[role="button"]',
+      '[role="menuitem"]',
+      '[tabindex]:not([tabindex="-1"])',
+      "[routerlink]",
+      "[ng-reflect-router-link]",
+      "[onclick]",
+      ".cursor-pointer",
+      ".mat-mdc-button",
+      ".mat-mdc-raised-button",
+      ".mat-mdc-unelevated-button",
+      ".mat-mdc-outlined-button",
+      ".mat-mdc-icon-button",
+      ".mat-mdc-menu-item",
+      ".mat-mdc-list-item",
+    ].join(",");
+
+    const candidates = [...document.querySelectorAll(selector), ...[...document.querySelectorAll("body *")].filter((el) => getComputedStyle(el).cursor === "pointer")];
+    const seen = new Set();
+    return candidates.filter((el) => {
+      if (seen.has(el)) return false;
+      seen.add(el);
+      if (el === document.body || el === document.documentElement) return false;
+      if (isEditable(el) || el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) return false;
+      if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return false;
+      const style = getComputedStyle(el);
+      if (style.visibility === "hidden" || style.display === "none" || style.pointerEvents === "none") return false;
+      if (el.closest("[hidden], [aria-hidden='true']")) return false;
+      return true;
+    }).slice(0, 40);
+  }
+
+  function getScreenModel() {
+    const fields = editableTargets().map((el, i) => ({
+      index: i,
+      selector: cssPath(el),
+      label: fieldLabel(el),
+      tag: el.tagName.toLowerCase(),
+      type: el.type || "",
+      required: !!el.required || el.getAttribute("aria-required") === "true",
+    }));
+    const actions = actionTargets().map((el, i) => ({
+      index: i,
+      selector: cssPath(el),
+      label: actionLabel(el) || `Action ${i + 1}`,
+      tag: el.tagName.toLowerCase(),
+      kind: actionKind(el),
+    }));
+    return {
+      ok: true,
+      url: location.href,
+      title: document.title,
+      heading: firstText("h1,h2,[role='heading']"),
+      fields,
+      actions,
+    };
+  }
+
+  async function runGeneratedCases(cases) {
+    stopRequested.generatedCases = false;
+    const results = [];
+    for (const testCase of cases.filter((c) => c?.enabled !== false)) {
+      if (stopRequested.generatedCases) break;
+      const started = Date.now();
+      try {
+        const outcome = await runGeneratedCase(testCase);
+        results.push({ id: testCase.id, title: testCase.title, status: outcome.ok ? "pass" : "blocked", notes: outcome.notes, duration: Date.now() - started });
+      } catch (err) {
+        results.push({ id: testCase.id, title: testCase.title, status: "fail", notes: err.message || String(err), duration: Date.now() - started });
+      }
+    }
+    return { ok: true, stopped: stopRequested.generatedCases, results };
+  }
+
+  async function runGeneratedCase(testCase) {
+    const notes = [];
+    for (const step of testCase.steps || []) {
+      if (stopRequested.generatedCases) return { ok: false, notes: "Stopped by tester." };
+      if (step.action === "click") {
+        const el = findAction(step);
+        if (!el) return { ok: false, notes: `Could not find action: ${step.label || step.selector || "unknown"}` };
+        flash(el);
+        el.click();
+        notes.push(`Clicked ${actionLabel(el) || step.label || step.selector}`);
+        await sleep(350);
+      } else if (step.action === "fill") {
+        const fields = editableTargets();
+        if (!fields.length) return { ok: false, notes: "No editable fields found." };
+        fields.forEach((el) => {
+          setEditableValue(el, valueForField(el, step.value || "valid"));
+          flash(el);
+        });
+        notes.push(`Filled ${fields.length} field(s).`);
+        await sleep(150);
+      } else if (step.action === "validate") {
+        notes.push(step.expect || "Validated visible result manually.");
+        await sleep(100);
+      }
+    }
+    return { ok: true, notes: notes.join("\n") || "Completed." };
+  }
+
+  function findAction(step) {
+    if (step.selector) {
+      const el = document.querySelector(step.selector);
+      if (el) return el;
+    }
+    const wanted = normalizeText(step.label || "");
+    return actionTargets().find((el) => normalizeText(actionLabel(el)).includes(wanted) || wanted.includes(normalizeText(actionLabel(el))));
+  }
+
+  function fieldLabel(el) {
+    const idLabel = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent : "";
+    return (idLabel || el.closest("label")?.textContent || el.getAttribute("aria-label") || el.placeholder || el.name || el.id || "").trim();
+  }
+
+  function actionLabel(el) {
+    return (el.getAttribute("aria-label") || el.title || el.value || el.textContent || "").trim().replace(/\s+/g, " ");
+  }
+
+  function actionKind(el) {
+    const label = normalizeText(actionLabel(el));
+    if (/add|create|new|إضافة|جديد/.test(label)) return "create";
+    if (/save|submit|حفظ|ارسال/.test(label)) return "submit";
+    if (/search|بحث/.test(label)) return "search";
+    if (/edit|تعديل/.test(label)) return "edit";
+    if (/delete|remove|حذف/.test(label)) return "delete";
+    return "navigate";
+  }
+
+  function valueForField(el, variant) {
+    const hint = normalizeText(`${fieldLabel(el)} ${el.name || ""} ${el.id || ""} ${el.type || ""}`);
+    if (variant === "empty") return "";
+    if (/email|بريد/.test(hint)) return "qa.tester@example.com";
+    if (/phone|mobile|جوال|هاتف/.test(hint)) return "+966500000000";
+    if (/number|count|رقم|عدد/.test(hint) || el.type === "number") return "123";
+    if (/desc|description|وصف/.test(hint)) return "وصف اختبار آلي";
+    return "اختبار آلي";
+  }
+
+  function firstText(selector) {
+    return (document.querySelector(selector)?.textContent || "").trim().replace(/\s+/g, " ");
+  }
+
+  function normalizeText(text = "") {
+    return String(text).trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Smart-fill a whole form with a fake identity by matching each field's
@@ -492,5 +774,23 @@
   }
 
   // Let the side panel know we're alive on load.
-  chrome.runtime.sendMessage({ type: MSG.PAGE_LOG, entry: { type: "system", level: "info", message: "ProTest content ready", ts: Date.now() } }).catch(() => {});
+  safeRuntimeSend({ type: MSG.PAGE_LOG, entry: { type: "system", level: "info", message: "ProTest content ready", ts: Date.now() } });
+
+  function extensionRuntimeAvailable() {
+    try {
+      return !!chrome?.runtime?.id;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function safeRuntimeSend(message) {
+    try {
+      if (!extensionRuntimeAvailable()) return;
+      const result = chrome.runtime.sendMessage(message);
+      if (result?.catch) result.catch(() => {});
+    } catch (_) {
+      // Ignore stale content scripts after extension reload/update.
+    }
+  }
 })();

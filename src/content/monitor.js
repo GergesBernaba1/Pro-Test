@@ -4,6 +4,9 @@
 // content.js relays those messages to the extension.
 
 (() => {
+  if (window.__protestMonitorLoaded) return;
+  window.__protestMonitorLoaded = true;
+
   const CHANNEL = "__PROTEST_LOG__";
 
   function emit(entry) {

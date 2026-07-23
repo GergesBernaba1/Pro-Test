@@ -28,6 +28,7 @@ export function parseSpec(spec) {
         id: `${method.toUpperCase()} ${path}`,
         method: method.toUpperCase(),
         path,
+        tags: Array.isArray(op.tags) ? op.tags : [],
         summary: op.summary || op.operationId || "",
         operationId: op.operationId || "",
         parameters: parameters.filter((p) => p.in !== "body" && p.in !== "formData"),

@@ -31,6 +31,7 @@
         <div class="tracker-toggle" role="tablist">
           <button class="tracker-toggle-btn active" id="trackerTabJira" data-tracker="jira" role="tab">Jira</button>
           <button class="tracker-toggle-btn" id="trackerTabTfs" data-tracker="tfs" role="tab">Azure DevOps / TFS</button>
+          <button class="tracker-toggle-btn" id="trackerTabAi" data-tracker="ai" role="tab">AI Agent</button>
         </div>
 
         <div id="jiraSettingsPanel">
@@ -81,6 +82,33 @@
             <button class="btn sm" id="testTfsConnection">Test connection</button>
           </div>
           <p class="muted tiny" id="tfsStatus"></p>
+        </div>
+
+        <div id="aiSettingsPanel" hidden>
+          <p class="muted tiny">Optional AI planner settings. Stored locally only. The current runner uses local heuristics unless an AI provider is explicitly enabled later.</p>
+          <div class="field">
+            <label for="aiProvider">Provider</label>
+            <select class="input" id="aiProvider">
+              <option value="none">None / local only</option>
+              <option value="openai">OpenAI-compatible</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="aiBaseUrl">Base URL</label>
+            <input class="input" id="aiBaseUrl" placeholder="https://api.openai.com/v1" />
+          </div>
+          <div class="field">
+            <label for="aiModel">Model</label>
+            <input class="input" id="aiModel" placeholder="e.g. gpt-4.1-mini" />
+          </div>
+          <div class="field">
+            <label for="aiApiKey">API key</label>
+            <input class="input" id="aiApiKey" type="password" placeholder="Stored in chrome.storage.local" />
+          </div>
+          <div class="row wrap">
+            <button class="btn primary sm" id="saveAiSettings">Save</button>
+          </div>
+          <p class="muted tiny" id="aiStatus"></p>
         </div>
       </div>
     </div>
@@ -161,6 +189,18 @@
         </div>
 
         <div class="card tool-card">
+          <div class="tool-title">Generated test cases</div>
+          <p class="muted tiny">Generate a practical scenario plan from the current screen, review it, then run selected cases.</p>
+          <div class="row wrap">
+            <button class="btn sm primary" id="generateScreenCases">Generate cases</button>
+            <button class="btn sm" id="runGeneratedCases">Run selected</button>
+            <button class="btn sm danger" id="stopGeneratedCases" hidden>Stop</button>
+          </div>
+          <p class="muted tiny" id="generatedCasesStatus"></p>
+          <div id="generatedCasesList" class="generated-cases"></div>
+        </div>
+
+        <div class="card tool-card">
           <div class="tool-title">🧲 Test-data injector</div>
           <p class="muted tiny">Fill inputs with edge-case data. Choose scope, then a value.</p>
           <div class="row" style="margin-bottom: 8px">
@@ -170,6 +210,21 @@
             </select>
             <button class="btn sm" id="fillIdentity">Fill fake identity</button>
           </div>
+          <div class="row wrap" style="margin-bottom: 8px">
+            <button class="btn sm primary" id="runEdgeSweep">Run edge sweep</button>
+            <button class="btn sm danger" id="stopEdgeSweep" hidden>Stop</button>
+            <select class="input sm" id="sweepMode" style="width: auto">
+              <option value="smart" selected>Smart screen test</option>
+              <option value="actions">Actions only</option>
+              <option value="forms">Forms only</option>
+              <option value="deep">Deep edge cases</option>
+            </select>
+            <label class="check-label">
+              <input type="checkbox" id="sweepClickActions" checked />
+              Click visible actions
+            </label>
+          </div>
+          <p class="muted tiny" id="sweepStatus"></p>
           <input class="input sm" id="dataSearch" placeholder="Search test values…" style="margin-bottom: 8px" />
           <div id="dataList" class="data-list"></div>
         </div>
@@ -221,6 +276,15 @@
             <input class="input sm" id="apiSpecUrl" placeholder="https://api.example.com/swagger.json" style="flex: 1" />
             <button class="btn sm" id="loadApiSpecUrl">Load URL</button>
           </div>
+          <div class="row wrap" style="margin-bottom: 8px">
+            <input class="input sm" id="apiLoginUrl" placeholder="Login URL, e.g. https://api.example.com/api/Auth/Login" style="flex: 1" />
+            <button class="btn sm" id="apiLoginBtn">Login + use token</button>
+          </div>
+          <div class="row wrap" style="margin-bottom: 8px">
+            <input class="input sm" id="apiLoginEmail" placeholder="User email" style="flex: 1" />
+            <input class="input sm" id="apiLoginPassword" type="password" placeholder="Password" style="flex: 1" />
+            <input class="input sm" id="apiLoginRole" placeholder="Role (optional)" style="width: 130px" />
+          </div>
           <details style="margin-bottom: 8px">
             <summary class="muted tiny" style="cursor: pointer">Or paste spec JSON</summary>
             <textarea class="input sm" id="apiSpecJson" placeholder="Paste OpenAPI/Swagger JSON here…" style="margin-top: 6px; height: 70px"></textarea>
@@ -237,6 +301,10 @@
               <label for="apiEndpointSelect">Endpoint</label>
               <select class="input sm" id="apiEndpointSelect"></select>
             </div>
+            <div class="field">
+              <label for="apiControllerFilter">Controller / tag filter</label>
+              <input class="input sm" id="apiControllerFilter" placeholder="e.g. CommercialSectors" />
+            </div>
             <div id="apiParamsList" class="stack"></div>
             <div class="field">
               <label for="apiExtraHeaders">Extra headers (one per line, "Name: value")</label>
@@ -249,6 +317,7 @@
             <div class="row wrap">
               <button class="btn sm primary" id="sendApiRequest">Send request</button>
               <button class="btn ghost sm" id="copyCurl">Copy as curl</button>
+              <button class="btn sm" id="runControllerApis">Run controller</button>
             </div>
             <div id="apiResponse" class="api-response"></div>
           </div>

@@ -53,6 +53,7 @@ body {
   flex-direction: column;
   animation: fade 0.15s ease;
 }
+.drawer[hidden] { display: none; }
 .drawer-head {
   display: flex;
   align-items: center;
@@ -249,6 +250,35 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.check-label input { accent-color: var(--brand); }
+
+.generated-cases {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.case-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.case-row input {
+  margin-top: 2px;
+  accent-color: var(--brand);
 }
 
 /* ---- steps / edge / bugs list items ------------------------------------ */
